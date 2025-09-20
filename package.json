@@ -1,0 +1,26 @@
+{
+  "name": "feminisse-back",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "build": "echo 'Starting build...' && terser src/index.js -o dist/index.min.js && echo 'Minification complete.' && cpx \"src/**/*\" dist && echo 'Files copied to dist.' && echo 'Build process completed successfully.'"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.7",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "nodemon": "^3.0.3",
+    "terser": "^5.15.1"
+  }
+}
