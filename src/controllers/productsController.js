@@ -5,8 +5,17 @@ dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 export async function getAllProducts(req, res) {
-  const { categoria_id, search } = req.query;
+  const { categoria_id, search, ids } = req.query;
   let query = supabase.from('products').select('*');
+  
+  // Filtro por IDs específicos (usado para favoritos)
+  if (ids) {
+    const idsArray = ids.split(',').map(id => id.trim()).filter(id => id);
+    if (idsArray.length > 0) {
+      query = query.in('id', idsArray);
+    }
+  }
+  
   if (categoria_id) {
     query = query.eq('categoria_id', categoria_id);
   }

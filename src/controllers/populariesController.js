@@ -1,17 +1,18 @@
-import pg from 'pg';
+import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-dotenv.config();
 
-const { Pool } = pg;
-const pool = new Pool({
-  connectionString: process.env.SUPABASE_DB_URL || process.env.DATABASE_URL,
-  ssl: process.env.SUPABASE_DB_URL ? { rejectUnauthorized: false } : false
-});
+dotenv.config();
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 export const getPopular = async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM popular ORDER BY id');
-    res.json(rows);
+    const { data, error } = await supabase
+      .from('popular')
+      .select('*')
+      .order('id', { ascending: true });
+    
+    if (error) throw error;
+    res.json(data || []);
   } catch (error) {
     res.status(500).json({ error: 'Erro ao buscar produtos populares', details: error.message });
   }

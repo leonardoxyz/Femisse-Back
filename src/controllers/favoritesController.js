@@ -1,26 +1,143 @@
-import { pool } from '../db/index.js';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 export async function getFavorites(req, res) {
-  const userId = req.user.id;
-  const result = await pool.query('SELECT favorites FROM usuarios WHERE id = $1', [userId]);
-  res.json(result.rows[0]?.favorites || []);
+  try {
+    const userId = req.user.id;
+    
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('favorites')
+      .eq('id', userId)
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+      throw error;
+    }
+    
+    const favorites = data?.favorites || [];
+    res.json(favorites);
+  } catch (err) {
+    console.error('Erro ao buscar favoritos:', err);
+    res.status(500).json({ error: 'Erro ao buscar favoritos', details: err.message });
+  }
 }
 
 export async function addFavorite(req, res) {
-  const userId = req.user.id;
-  const { productId } = req.body;
-  const result = await pool.query('SELECT favorites FROM usuarios WHERE id = $1', [userId]);
-  let favorites = result.rows[0]?.favorites || [];
-  if (!favorites.includes(productId)) favorites.push(productId);
-  await pool.query('UPDATE usuarios SET favorites = $1 WHERE id = $2', [JSON.stringify(favorites), userId]);
-  res.json(favorites);
+  try {
+    const userId = req.user.id;
+    const { productId } = req.body;
+    
+    if (!productId) {
+      return res.status(400).json({ error: 'productId é obrigatório' });
+    }
+    
+    // Busca os favoritos atuais
+    const { data: userData, error: fetchError } = await supabase
+      .from('usuarios')
+      .select('favorites')
+      .eq('id', userId)
+      .single();
+    
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+      throw fetchError;
+    }
+    
+    let favorites = userData?.favorites || [];
+    
+    // Converte productId para string para garantir consistência
+    const productIdStr = String(productId);
+    const favoritesStr = favorites.map(f => String(f));
+    
+    // Adiciona o produto se não estiver na lista
+    if (!favoritesStr.includes(productIdStr)) {
+      favorites.push(productIdStr);
+      
+      // Atualiza no banco
+      const { error: updateError } = await supabase
+        .from('usuarios')
+        .update({ favorites })
+        .eq('id', userId);
+      
+      if (updateError) throw updateError;
+    }
+    
+    res.json(favorites);
+  } catch (err) {
+    console.error('Erro ao adicionar favorito:', err);
+    res.status(500).json({ error: 'Erro ao adicionar favorito', details: err.message });
+  }
 }
 
 export async function removeFavorite(req, res) {
-  const userId = req.user.id;
-  const { productId } = req.params;
-  const result = await pool.query('SELECT favorites FROM usuarios WHERE id = $1', [userId]);
-  let favorites = (result.rows[0]?.favorites || []).filter(id => id !== productId);
-  await pool.query('UPDATE usuarios SET favorites = $1 WHERE id = $2', [JSON.stringify(favorites), userId]);
-  res.json(favorites);
+  try {
+    const userId = req.user.id;
+    const { productId } = req.params;
+    
+    if (!productId) {
+      return res.status(400).json({ error: 'productId é obrigatório' });
+    }
+    
+    // Busca os favoritos atuais
+    const { data: userData, error: fetchError } = await supabase
+      .from('usuarios')
+      .select('favorites')
+      .eq('id', userId)
+      .single();
+    
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+      throw fetchError;
+    }
+    
+    let favorites = userData?.favorites || [];
+    
+    // Converte para string para garantir consistência
+    const productIdStr = String(productId);
+    favorites = favorites.filter(id => String(id) !== productIdStr);
+    
+    // Atualiza no banco
+    const { error: updateError } = await supabase
+      .from('usuarios')
+      .update({ favorites })
+      .eq('id', userId);
+    
+    if (updateError) throw updateError;
+    
+    res.json(favorites);
+  } catch (err) {
+    console.error('Erro ao remover favorito:', err);
+    res.status(500).json({ error: 'Erro ao remover favorito', details: err.message });
+  }
+}
+
+// Função para resetar favoritos (útil para debugging)
+export async function clearFavorites(req, res) {
+  try {
+    const userId = req.user.id;
+    
+    // Limpa todos os favoritos
+    const { error: updateError } = await supabase
+      .from('usuarios')
+      .update({ favorites: [] })
+      .eq('id', userId);
+    
+    if (updateError) throw updateError;
+    
+    res.json({ message: 'Favoritos limpos com sucesso', favorites: [] });
+  } catch (err) {
+    console.error('Erro ao limpar favoritos:', err);
+    res.status(500).json({ error: 'Erro ao limpar favoritos', details: err.message });
+  }
 }

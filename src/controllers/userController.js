@@ -1,35 +1,99 @@
-import { pool } from '../db/index.js';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 export async function listUsers(req, res) {
   try {
-    const result = await pool.query('SELECT * FROM usuarios');
-    res.json(result.rows);
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*');
+    
+    if (error) throw error;
+    res.json(data || []);
   } catch (err) {
-    res.status(500).json({ error: 'Erro ao listar usuários' });
+    console.error('Erro ao listar usuários:', err);
+    res.status(500).json({ error: 'Erro ao listar usuários', details: err.message });
   }
 }
 
 export async function getUserById(req, res) {
   try {
     const { id } = req.params;
-    const result = await pool.query('SELECT * FROM usuarios WHERE id = $1', [id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
-    res.json(result.rows[0]);
+    console.log('Buscando usuário com ID:', id);
+    
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    console.log('Resultado da busca:', { data, error });
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+      throw error;
+    }
+    
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ error: 'Erro ao buscar usuário' });
+    console.error('Erro ao buscar usuário:', err);
+    res.status(500).json({ error: 'Erro ao buscar usuário', details: err.message });
+  }
+}
+
+export async function getMyProfile(req, res) {
+  try {
+    const userId = req.user.id; // ID do usuário autenticado
+    console.log('Buscando perfil do usuário logado:', userId);
+    
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    console.log('Resultado da busca do perfil:', { data, error });
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Perfil não encontrado' });
+      }
+      throw error;
+    }
+    
+    res.json(data);
+  } catch (err) {
+    console.error('Erro ao buscar perfil:', err);
+    res.status(500).json({ error: 'Erro ao buscar perfil', details: err.message });
   }
 }
 
 export async function createUser(req, res) {
   try {
     const { nome, data_nascimento, cpf, telefone, email, senha_hash } = req.body;
-    const result = await pool.query(
-      'INSERT INTO usuarios (nome, data_nascimento, cpf, telefone, email, senha_hash) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [nome, data_nascimento, cpf, telefone, email, senha_hash]
-    );
-    res.status(201).json(result.rows[0]);
+    
+    const { data, error } = await supabase
+      .from('usuarios')
+      .insert([{
+        nome,
+        data_nascimento,
+        cpf,
+        telefone,
+        email,
+        senha_hash
+      }])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    res.status(201).json(data);
   } catch (err) {
-    res.status(500).json({ error: 'Erro ao criar usuário' });
+    console.error('Erro ao criar usuário:', err);
+    res.status(500).json({ error: 'Erro ao criar usuário', details: err.message });
   }
 }
 
@@ -37,25 +101,56 @@ export async function updateUser(req, res) {
   try {
     const { id } = req.params;
     const { nome, data_nascimento, cpf, telefone, email } = req.body;
-    const result = await pool.query(
-      'UPDATE usuarios SET nome=$1, data_nascimento=$2, cpf=$3, telefone=$4, email=$5 WHERE id=$6 RETURNING *',
-      [nome, data_nascimento, cpf, telefone, email, id]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
-    res.json(result.rows[0]);
+    
+    const { data, error } = await supabase
+      .from('usuarios')
+      .update({
+        nome,
+        data_nascimento,
+        cpf,
+        telefone,
+        email
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+      throw error;
+    }
+    
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ error: 'Erro ao atualizar usuário' });
+    console.error('Erro ao atualizar usuário:', err);
+    res.status(500).json({ error: 'Erro ao atualizar usuário', details: err.message });
   }
 }
 
 export async function deleteUser(req, res) {
   try {
     const { id } = req.params;
-    const result = await pool.query('DELETE FROM usuarios WHERE id=$1 RETURNING *', [id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
+    
+    const { data, error } = await supabase
+      .from('usuarios')
+      .delete()
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+      throw error;
+    }
+    
     res.json({ message: 'Usuário deletado com sucesso' });
   } catch (err) {
-    res.status(500).json({ error: err });
+    console.error('Erro ao deletar usuário:', err);
+    res.status(500).json({ error: 'Erro ao deletar usuário', details: err.message });
   }
 }
 
@@ -136,28 +231,23 @@ export async function updateMyProfile(req, res) {
       });
     }
 
-    // Construir query de forma segura
-    const setClause = fieldsToUpdate
-      .map((field, index) => `${field} = $${index + 1}`)
-      .join(', ');
+    // Atualizar usando Supabase
+    const { data, error } = await supabase
+      .from('usuarios')
+      .update(sanitized)
+      .eq('id', userId)
+      .select('id, nome, data_nascimento, cpf, telefone, email')
+      .single();
     
-    const values = [...Object.values(sanitized), userId];
-    
-    const query = `
-      UPDATE usuarios 
-      SET ${setClause}
-      WHERE id = $${values.length} 
-      RETURNING id, nome, data_nascimento, cpf, telefone, email
-    `;
-    
-    const result = await pool.query(query, values);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Usuário não encontrado' });
+      }
+      throw error;
     }
 
     // Não retornar dados sensíveis
-    const user = result.rows[0];
+    const user = data;
     const safeUser = {
       id: user.id,
       nome: user.nome,

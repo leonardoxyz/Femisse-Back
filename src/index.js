@@ -15,23 +15,35 @@ import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// Importa configuração de ambiente
+import { CORS_ORIGINS, isDevelopment, isProduction, PORT } from './config/environment.js';
+
 // Configura variáveis de ambiente
 dotenv.config();
 
 const app = express();
-// Configuração CORS restritiva
-const allowedOrigins = [
-  'http://localhost:8080', // Vite dev
-  'http://localhost:5173', // Vite dev (porta padrão)
-  'https://femisse.com', // Seu domínio de produção
-];
 
+// Configuração CORS baseada no ambiente
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // Permite requests sem origin (ex: curl)
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (!origin) return callback(null, true); // Permite requests sem origin (ex: curl, Postman)
+    
+    // Em desenvolvimento, permite localhost
+    if (isDevelopment && origin.includes('localhost')) {
       return callback(null, true);
     }
+    
+    // Permite origens específicas
+    if (CORS_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Em produção, permite qualquer subdomínio da Vercel
+    if (isProduction && origin.includes('.vercel.app')) {
+      return callback(null, true);
+    }
+    
+    console.log('❌ CORS blocked origin:', origin);
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -62,6 +74,21 @@ app.use(
   })
 );
 
+// Rota de health check
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'API is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Rota raiz
+app.get('/', (req, res) => {
+  res.json({ message: 'Feminisse API - Backend funcionando!' });
+});
+
 // Rotas da API (todas ANTES do express.static)
 app.use('/api/address', addressRoutes);
 app.use('/api/products', productRoutes);
@@ -71,32 +98,34 @@ app.use('/api/moment-products', momentProductsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/usuarios', userRoutes);
 app.use('/api/categories', categoryRoutes);
-app.use('/api/users/me/favorites', favoriteRoutes);
+app.use('/api/users/me', favoriteRoutes); // Rotas de usuário (favoritos)
 
-// Servir build do frontend (Vite) em produção
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const viteBuildPath = path.join(__dirname, '../../feminisse-front/dist');
-app.use(express.static(viteBuildPath));
-
-// Rota catch-all para SPA (React Router)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(viteBuildPath, 'index.html'));
-});
-
-// Handler para 404 (caso queira customizar)
-app.use((req, res, next) => {
-  res.status(404).json({ error: 'Not Found' });
-});
-
-// Handler para 500
+// Middleware de tratamento de erros
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Internal Server Error' });
+  console.error('Error:', err);
+  res.status(500).json({ 
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
 });
 
-const PORT = process.env.PORT || 4000;
+// Rota 404 para APIs
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
+// Na Vercel, servir apenas a API (frontend é projeto separado)
+console.log('Environment:', process.env.NODE_ENV);
+console.log('Vercel:', process.env.VERCEL);
+console.log('Rodando apenas como API backend');
+
+// Handler final para rotas não encontradas
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`📍 Ambiente: ${isDevelopment ? 'DESENVOLVIMENTO' : 'PRODUÇÃO'}`);
+  console.log(`🌐 CORS permitido para: ${CORS_ORIGINS.join(', ')}`);
 });
-
