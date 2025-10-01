@@ -32,7 +32,7 @@ export async function getFavorites(req, res) {
 export async function addFavorite(req, res) {
   try {
     const userId = req.user.id;
-    const { productId } = req.body;
+    const { productId } = req.validatedBody ?? req.body;
     
     if (!productId) {
       return res.status(400).json({ error: 'productId é obrigatório' });
@@ -81,7 +81,7 @@ export async function addFavorite(req, res) {
 export async function removeFavorite(req, res) {
   try {
     const userId = req.user.id;
-    const { productId } = req.params;
+    const { productId } = req.validatedParams ?? req.params;
     
     if (!productId) {
       return res.status(400).json({ error: 'productId é obrigatório' });

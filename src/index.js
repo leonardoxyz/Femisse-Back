@@ -2,6 +2,8 @@ import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
+import rateLimit from 'express-rate-limit';
+import pinoHttp from 'pino-http';
 import addressRoutes from './routes/addressRoutes.js';
 import categoryRoutes from './routes/categoryRoutes.js';
 import productRoutes from './routes/products.js';
@@ -49,6 +51,24 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+
+const logger = pinoHttp({
+  level: isDevelopment ? 'debug' : 'info',
+});
+
+app.use(logger);
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: isProduction ? 500 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Muitas requisições. Tente novamente em alguns minutos.',
+  },
+});
+
+app.use('/api/', apiLimiter);
 
 // Inicializa Supabase
 const supabase = createClient(

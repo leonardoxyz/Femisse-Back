@@ -6,7 +6,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 export async function listAddresses(req, res) {
   try {
-    const { usuario_id } = req.query;
+    const { usuario_id } = req.validatedQuery ?? req.query;
     let query = supabase.from('address').select('*');
     
     if (usuario_id) {
@@ -26,7 +26,7 @@ export async function listAddresses(req, res) {
 
 export async function getAddressById(req, res) {
   try {
-    const { id } = req.params;
+    const { id } = req.validatedParams ?? req.params;
     
     const { data, error } = await supabase
       .from('address')
@@ -51,12 +51,17 @@ export async function getAddressById(req, res) {
 export async function createAddress(req, res) {
   try {
     const usuario_id = req.user.id; // pega do token JWT
-    const { label, street, number, complement, neighborhood, city, state, zip_code, is_default } = req.body;
-    
-    // Validação básica
-    if (!label || !street || !number || !neighborhood || !city || !state || !zip_code) {
-      return res.status(400).json({ error: 'Campos obrigatórios: label, street, number, neighborhood, city, state, zip_code' });
-    }
+    const {
+      label,
+      street,
+      number,
+      complement,
+      neighborhood,
+      city,
+      state,
+      zip_code,
+      is_default = false,
+    } = req.validatedBody ?? req.body;
     
     const { data, error } = await supabase
       .from('address')
@@ -86,8 +91,18 @@ export async function createAddress(req, res) {
 
 export async function updateAddress(req, res) {
   try {
-    const { id } = req.params;
-    const { label, street, number, complement, neighborhood, city, state, zip_code, is_default } = req.body;
+    const { id } = req.validatedParams ?? req.params;
+    const {
+      label,
+      street,
+      number,
+      complement,
+      neighborhood,
+      city,
+      state,
+      zip_code,
+      is_default,
+    } = req.validatedBody ?? req.body;
     
     const { data, error } = await supabase
       .from('address')
@@ -122,7 +137,7 @@ export async function updateAddress(req, res) {
 
 export async function deleteAddress(req, res) {
   try {
-    const { id } = req.params;
+    const { id } = req.validatedParams ?? req.params;
     
     const { data, error } = await supabase
       .from('address')
