@@ -1,19 +1,60 @@
 import express from 'express';
-import { listOrders, getOrderById, createOrder, updateOrder, deleteOrder } from '../controllers/orderController.js';
+import {
+  listOrders,
+  listUserOrders,
+  getOrderById,
+  createOrder,
+  updateOrder,
+  deleteOrder,
+} from '../controllers/orderController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
+import { validateRequest } from '../middleware/validateRequest.js';
+import {
+  orderCreateSchema,
+  orderUpdateSchema,
+  orderParamsSchema,
+  orderListQuerySchema,
+  orderUserListQuerySchema,
+} from '../validators/orderSchemas.js';
 
 const router = express.Router();
 
 // Rotas do usuário autenticado para pedidos
-router.get('/user/orders', authenticateToken, listOrders); // Listar pedidos do usuário
-router.post('/user/orders', authenticateToken, createOrder); // Criar novo pedido
+router.get(
+  '/user/orders',
+  authenticateToken,
+  validateRequest(orderUserListQuerySchema, 'query'),
+  listUserOrders
+);
+router.post(
+  '/user/orders',
+  authenticateToken,
+  validateRequest(orderCreateSchema),
+  createOrder
+);
 
 // Rotas administrativas (listar todos os pedidos)
-router.get('/', listOrders); // Listar todos os pedidos (admin)
+router.get('/', validateRequest(orderListQuerySchema, 'query'), listOrders);
 
 // Rotas específicas por ID (devem vir por último)
-router.get('/:id', authenticateToken, getOrderById); // Buscar pedido por ID
-router.put('/:id', authenticateToken, updateOrder); // Atualizar pedido
-router.delete('/:id', authenticateToken, deleteOrder); // Cancelar pedido
+router.get(
+  '/:id',
+  authenticateToken,
+  validateRequest(orderParamsSchema, 'params'),
+  getOrderById
+);
+router.put(
+  '/:id',
+  authenticateToken,
+  validateRequest(orderParamsSchema, 'params'),
+  validateRequest(orderUpdateSchema),
+  updateOrder
+);
+router.delete(
+  '/:id',
+  authenticateToken,
+  validateRequest(orderParamsSchema, 'params'),
+  deleteOrder
+);
 
 export default router;

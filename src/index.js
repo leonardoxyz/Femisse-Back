@@ -13,6 +13,8 @@ import momentProductsRoutes from './routes/momentProducts.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import favoriteRoutes from './routes/favoriteRoutes.js';
+import orderRoutes from './routes/orderRoutes.js';
+import reviewRoutes from './routes/reviewRoutes.js';
 import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -119,6 +121,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/usuarios', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/users/me', favoriteRoutes); // Rotas de usuário (favoritos)
+app.use('/api/orders', reviewRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Middleware de tratamento de erros
 app.use((err, req, res, next) => {
