@@ -15,9 +15,23 @@ import userRoutes from './routes/userRoutes.js';
 import favoriteRoutes from './routes/favoriteRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
+import statsRoutes from './routes/stats.js';
 import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { 
+  generalRateLimit, 
+  securityHeaders, 
+  sanitizeInput, 
+  securityLogger 
+} from './middleware/validationMiddleware.js';
+import {
+  compressionMiddleware,
+  performanceHeaders,
+  performanceLogger,
+  cacheMiddleware,
+  statsCollector
+} from './middleware/performanceMiddleware.js';
 
 // Importa configuração de ambiente
 import { CORS_ORIGINS, isDevelopment, isProduction, PORT } from './config/environment.js';
@@ -26,6 +40,18 @@ import { CORS_ORIGINS, isDevelopment, isProduction, PORT } from './config/enviro
 dotenv.config();
 
 const app = express();
+
+// Middlewares de performance (aplicar primeiro)
+app.use(compressionMiddleware);
+app.use(performanceHeaders);
+app.use(performanceLogger);
+app.use(statsCollector);
+
+// Middlewares de segurança
+app.use(securityHeaders);
+app.use(sanitizeInput);
+app.use(securityLogger);
+app.use(generalRateLimit);
 
 // Configuração CORS baseada no ambiente
 app.use(cors({
@@ -115,14 +141,15 @@ app.get('/', (req, res) => {
 app.use('/api/address', addressRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/popular', popularRoutes);
-app.use('/api/banner-images', bannerImagesRoutes);
 app.use('/api/moment-products', momentProductsRoutes);
+app.use('/api/banner-images', bannerImagesRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/usuarios', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/users/me', favoriteRoutes); // Rotas de usuário (favoritos)
-app.use('/api/orders', reviewRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/stats', statsRoutes); // Rotas de estatísticas
 
 // Middleware de tratamento de erros
 app.use((err, req, res, next) => {

@@ -30,6 +30,13 @@ router.get(
   listReviewableProducts
 );
 
+// Alias para compatibilidade
+router.get(
+  '/user/reviewable-items',
+  authenticateToken,
+  listReviewableProducts
+);
+
 router.post(
   '/user/reviews',
   authenticateToken,

@@ -2,6 +2,7 @@ import express from 'express';
 import { listAddresses, getAddressById, createAddress, updateAddress, deleteAddress, listMyAddresses } from '../controllers/addressController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { validateRequest } from '../middleware/validateRequest.js';
+import { strictRateLimit } from '../middleware/validationMiddleware.js';
 import {
   addressCreateSchema,
   addressUpdateSchema,
@@ -10,6 +11,9 @@ import {
 } from '../validators/addressSchemas.js';
 
 const router = express.Router();
+
+// Rate limiting mais restrito para operações de endereço
+router.use(strictRateLimit);
 
 // Rotas administrativas (sem autenticação para listagem geral)
 router.get('/', validateRequest(addressListQuerySchema, 'query'), listAddresses);
