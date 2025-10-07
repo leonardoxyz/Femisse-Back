@@ -1,8 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import { 
+  validateEmail,
+  validateCPF,
+  validatePhone,
+  validateBirthDate,
+  validateName,
+  validateUUID,
+  sanitizeString,
+  secureLog, 
+  getErrorMessage 
+} from '../utils/securityUtils.js';
 
 dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+const isDevelopment = process.env.NODE_ENV !== 'production';
+const isProduction = process.env.NODE_ENV === 'production';
 
 export async function listUsers(req, res) {
   try {
@@ -21,7 +35,17 @@ export async function listUsers(req, res) {
 export async function getUserById(req, res) {
   try {
     const { id } = req.params;
-    console.log('Buscando usuário com ID:', id);
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
+    
+    secureLog('Buscando usuário com ID:', { id });
     
     const { data, error } = await supabase
       .from('usuarios')
@@ -100,19 +124,45 @@ export async function createUser(req, res) {
 export async function updateUser(req, res) {
   try {
     const { id } = req.params;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
+    
     const { nome, data_nascimento, cpf, telefone, email } = req.body;
+    
+    // Valida e sanitiza dados
+    const { errors, sanitized } = validateAndSanitizeProfileData({ nome, data_nascimento, cpf, telefone });
+    
+    if (errors.length > 0) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: errors
+      });
+    }
+    
+    // Valida email se fornecido
+    if (email) {
+      const emailValidation = validateEmail(email);
+      if (!emailValidation.valid) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'email', message: emailValidation.message }]
+        });
+      }
+      sanitized.email = emailValidation.value;
+    }
     
     const { data, error } = await supabase
       .from('usuarios')
-      .update({
-        nome,
-        data_nascimento,
-        cpf,
-        telefone,
-        email
-      })
+      .update(sanitized)
       .eq('id', id)
-      .select()
+      .select('id, nome, data_nascimento, cpf, telefone, email')
       .single();
     
     if (error) {
@@ -132,6 +182,15 @@ export async function updateUser(req, res) {
 export async function deleteUser(req, res) {
   try {
     const { id } = req.params;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
     
     const { data, error } = await supabase
       .from('usuarios')
@@ -154,54 +213,46 @@ export async function deleteUser(req, res) {
   }
 }
 
-// Validações e sanitização
+// Validações e sanitização usando utilitários centralizados
 function validateAndSanitizeProfileData(data) {
   const errors = [];
   const sanitized = {};
 
   // Nome - obrigatório
-  if (!data.nome || typeof data.nome !== 'string') {
-    errors.push('Nome é obrigatório');
+  const nameValidation = validateName(data.nome);
+  if (!nameValidation.valid) {
+    errors.push({ field: 'nome', message: nameValidation.message });
   } else {
-    const nome = data.nome.trim();
-    if (nome.length < 2 || nome.length > 100) {
-      errors.push('Nome deve ter entre 2 e 100 caracteres');
-    } else if (!/^[a-zA-ZÀ-ÿ\s]+$/.test(nome)) {
-      errors.push('Nome deve conter apenas letras e espaços');
-    } else {
-      sanitized.nome = nome;
-    }
+    sanitized.nome = nameValidation.value;
   }
 
   // Data de nascimento - opcional
   if (data.data_nascimento) {
-    const date = new Date(data.data_nascimento);
-    if (isNaN(date.getTime())) {
-      errors.push('Data de nascimento inválida');
-    } else if (date > new Date()) {
-      errors.push('Data de nascimento não pode ser futura');
+    const birthDateValidation = validateBirthDate(data.data_nascimento);
+    if (!birthDateValidation.valid) {
+      errors.push({ field: 'data_nascimento', message: birthDateValidation.message });
     } else {
-      sanitized.data_nascimento = data.data_nascimento;
+      sanitized.data_nascimento = birthDateValidation.value;
     }
   }
 
-  // CPF - opcional, mas se fornecido deve ser válido
+  // CPF - opcional
   if (data.cpf) {
-    const cpf = data.cpf.replace(/\D/g, '');
-    if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) {
-      errors.push('CPF inválido');
+    const cpfValidation = validateCPF(data.cpf);
+    if (!cpfValidation.valid) {
+      errors.push({ field: 'cpf', message: cpfValidation.message });
     } else {
-      sanitized.cpf = cpf;
+      sanitized.cpf = cpfValidation.value;
     }
   }
 
   // Telefone - opcional
   if (data.telefone) {
-    const telefone = data.telefone.replace(/\D/g, '');
-    if (telefone.length < 10 || telefone.length > 11) {
-      errors.push('Telefone deve ter 10 ou 11 dígitos');
+    const phoneValidation = validatePhone(data.telefone);
+    if (!phoneValidation.valid) {
+      errors.push({ field: 'telefone', message: phoneValidation.message });
     } else {
-      sanitized.telefone = telefone;
+      sanitized.telefone = phoneValidation.value;
     }
   }
 

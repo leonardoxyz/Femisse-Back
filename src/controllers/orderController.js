@@ -7,6 +7,15 @@ import {
   cacheSet,
   cacheClearSet,
 } from '../services/cacheService.js';
+import { 
+  validateUUID, 
+  validatePositiveDecimal, 
+  validatePositiveInteger,
+  validateLimit,
+  sanitizeString,
+  secureLog, 
+  getErrorMessage 
+} from '../utils/securityUtils.js';
 
 const ORDER_LIST_TTL = 120;
 const ORDER_DETAIL_TTL = 180;
@@ -89,6 +98,26 @@ export async function listUserOrders(req, res) {
   try {
     const userId = req.user.id;
     const { status, limit } = req.validatedQuery ?? {};
+    
+    // Valida limit
+    if (limit) {
+      const limitValidation = validateLimit(limit, 100);
+      if (!limitValidation.valid) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: limitValidation.message
+        });
+      }
+    }
+    
+    // Valida status
+    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Status inválido'
+      });
+    }
 
     const paramsHash = hashParams({ status: status ?? null, limit: limit ?? null });
     const cacheKey = getUserOrdersCacheKey(userId, paramsHash);
@@ -107,7 +136,7 @@ export async function listUserOrders(req, res) {
       query = query.eq('status', status);
     }
     if (limit) {
-      query = query.limit(limit);
+      query = query.limit(parseInt(limit));
     }
 
     const { data, error } = await query;
@@ -177,6 +206,15 @@ export async function getOrderById(req, res) {
   try {
     const { id } = req.validatedParams ?? req.params;
     const requesterId = req.user?.id;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
 
     const cacheKey = getOrderDetailCacheKey(id);
     const cached = await cacheGet(cacheKey);
@@ -209,15 +247,112 @@ export async function createOrder(req, res) {
   try {
     const userId = req.user.id;
     const payload = req.validatedBody ?? req.body;
+    
+    secureLog('Creating order for user:', { userId });
 
+    // Validação de itens
     const items = payload.items ?? [];
     if (items.length === 0) {
-      return res.status(400).json({ error: 'Inclua pelo menos um item no pedido' });
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Inclua pelo menos um item no pedido' 
+      });
+    }
+    
+    // Limite de 50 itens por pedido
+    if (items.length > 50) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Máximo de 50 itens por pedido' 
+      });
+    }
+    
+    // Valida cada item
+    const errors = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      
+      // Valida product_id
+      const productIdValidation = validateUUID(item.product_id);
+      if (!productIdValidation.valid) {
+        errors.push({ field: `items[${i}].product_id`, message: 'ID do produto inválido' });
+      }
+      
+      // Valida quantity
+      const quantityValidation = validatePositiveInteger(item.quantity, 'Quantidade');
+      if (!quantityValidation.valid) {
+        errors.push({ field: `items[${i}].quantity`, message: quantityValidation.message });
+      } else if (quantityValidation.value > 100) {
+        errors.push({ field: `items[${i}].quantity`, message: 'Quantidade máxima é 100 por item' });
+      }
+      
+      // Valida unit_price
+      const priceValidation = validatePositiveDecimal(item.unit_price, 'Preço unitário');
+      if (!priceValidation.valid) {
+        errors.push({ field: `items[${i}].unit_price`, message: priceValidation.message });
+      } else if (priceValidation.value > 100000) {
+        errors.push({ field: `items[${i}].unit_price`, message: 'Preço unitário máximo é R$ 100.000' });
+      }
+      
+      // Sanitiza product_name
+      if (item.product_name) {
+        items[i].product_name = sanitizeString(item.product_name);
+      }
+    }
+    
+    if (errors.length > 0) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: errors
+      });
+    }
+    
+    // Valida shipping_cost
+    const shippingCostValidation = validatePositiveDecimal(payload.shipping_cost ?? 0, 'Custo de envio');
+    if (!shippingCostValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: shippingCostValidation.message
+      });
+    }
+    const shippingCost = shippingCostValidation.value;
+    
+    // Valida discount
+    const discountValidation = validatePositiveDecimal(payload.discount ?? 0, 'Desconto');
+    if (!discountValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: discountValidation.message
+      });
+    }
+    const discount = discountValidation.value;
+    
+    // Valida payment_method
+    const validPaymentMethods = ['credit_card', 'debit_card', 'pix', 'boleto'];
+    if (!payload.payment_method || !validPaymentMethods.includes(payload.payment_method)) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Método de pagamento inválido'
+      });
+    }
+    
+    // Valida shipping (endereço de entrega)
+    if (!payload.shipping || typeof payload.shipping !== 'object') {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Endereço de entrega é obrigatório'
+      });
     }
 
-    const shippingCost = payload.shipping_cost ?? 0;
-    const discount = payload.discount ?? 0;
     const { subtotal, total } = calculateOrderTotals(items, shippingCost, discount);
+    
+    // Valida total máximo (R$ 50.000)
+    if (total > 50000) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Valor total do pedido excede o limite de R$ 50.000'
+      });
+    }
 
     const { data: orderCode, error: orderCodeError } = await supabase.rpc('generate_order_number');
     if (orderCodeError) {
@@ -235,7 +370,7 @@ export async function createOrder(req, res) {
       shipping_cost: shippingCost,
       discount,
       total,
-      notes: payload.notes ?? null,
+      notes: payload.notes ? sanitizeString(payload.notes.substring(0, 500)) : null, // Limita a 500 caracteres
       ...normalizeShippingPayload(payload.shipping),
     };
 
@@ -275,6 +410,33 @@ export async function updateOrder(req, res) {
   try {
     const { id } = req.validatedParams ?? req.params;
     const payload = req.validatedBody ?? req.body;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
+    
+    // Valida status se fornecido
+    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+    if (payload.status && !validStatuses.includes(payload.status)) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Status inválido'
+      });
+    }
+    
+    // Valida payment_status se fornecido
+    const validPaymentStatuses = ['pending', 'paid', 'failed', 'refunded'];
+    if (payload.payment_status && !validPaymentStatuses.includes(payload.payment_status)) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Status de pagamento inválido'
+      });
+    }
 
     const updates = { ...payload };
 
@@ -314,6 +476,15 @@ export async function updateOrder(req, res) {
 export async function deleteOrder(req, res) {
   try {
     const { id } = req.validatedParams ?? req.params;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
 
     const { data: order, error: fetchError } = await supabase
       .from('orders')

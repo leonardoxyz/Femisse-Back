@@ -4,6 +4,13 @@ import {
   cacheGet,
   cacheSet,
 } from '../services/cacheService.js';
+import { 
+  validateUUID, 
+  validateRating,
+  sanitizeString,
+  secureLog, 
+  getErrorMessage 
+} from '../utils/securityUtils.js';
 
 const REVIEW_LIST_TTL = 120;
 const REVIEWABLE_LIST_TTL = 120;
@@ -191,8 +198,90 @@ export async function listReviewableProducts(req, res) {
 export async function createReview(req, res) {
   try {
     const userId = req.user.id;
-    const { product_id, order_id, rating, comment } = req.validatedBody ?? req.body;
-    console.log('createReview payload', { userId, product_id, order_id, rating, comment });
+    let { product_id, order_id, rating, comment } = req.validatedBody ?? req.body;
+    
+    secureLog('Creating review', { userId, product_id, order_id, rating });
+    
+    // Valida product_id
+    const productIdValidation = validateUUID(product_id);
+    if (!productIdValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: [{ field: 'product_id', message: productIdValidation.message }]
+      });
+    }
+    
+    // Valida order_id
+    const orderIdValidation = validateUUID(order_id);
+    if (!orderIdValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: [{ field: 'order_id', message: orderIdValidation.message }]
+      });
+    }
+    
+    // Valida rating (1-5)
+    const ratingValidation = validateRating(rating);
+    if (!ratingValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: [{ field: 'rating', message: ratingValidation.message }]
+      });
+    }
+    rating = ratingValidation.value;
+    
+    // Valida e sanitiza comment
+    if (comment) {
+      if (typeof comment !== 'string') {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'comment', message: 'Comentário deve ser texto' }]
+        });
+      }
+      
+      comment = sanitizeString(comment);
+      
+      // Limita tamanho do comentário
+      if (comment.length > 1000) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'comment', message: 'Comentário deve ter no máximo 1000 caracteres' }]
+        });
+      }
+      
+      // Verifica se não é spam (comentário muito curto ou repetitivo)
+      if (comment.length < 10) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'comment', message: 'Comentário deve ter pelo menos 10 caracteres' }]
+        });
+      }
+      
+      // Detecta spam simples (mesma letra repetida muitas vezes)
+      if (/(.)\1{10,}/.test(comment)) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'comment', message: 'Comentário inválido' }]
+        });
+      }
+    }
+    
+    // Verifica rate limiting (máximo 5 reviews por dia por usuário)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count, error: countError } = await supabase
+      .from('product_reviews')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('created_at', oneDayAgo);
+    
+    if (countError) {
+      console.error('Erro ao verificar limite de reviews:', countError);
+    } else if (count >= 5) {
+      return res.status(429).json({ 
+        error: 'Limite atingido',
+        details: 'Você pode criar no máximo 5 avaliações por dia'
+      });
+    }
 
     const { data: existingOrder, error: orderError } = await supabase
       .from('orders')
@@ -255,11 +344,67 @@ export async function updateReview(req, res) {
   try {
     const userId = req.user.id;
     const { id } = req.validatedParams ?? req.params;
-    const payload = req.validatedBody ?? req.body;
+    let payload = req.validatedBody ?? req.body;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: [{ field: 'id', message: uuidValidation.message }]
+      });
+    }
+    
+    secureLog('Updating review', { userId, id });
 
     const updates = {};
-    if (payload.rating !== undefined) updates.rating = payload.rating;
-    if (payload.comment !== undefined) updates.comment = payload.comment;
+    
+    // Valida rating se fornecido
+    if (payload.rating !== undefined) {
+      const ratingValidation = validateRating(payload.rating);
+      if (!ratingValidation.valid) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'rating', message: ratingValidation.message }]
+        });
+      }
+      updates.rating = ratingValidation.value;
+    }
+    
+    // Valida e sanitiza comment se fornecido
+    if (payload.comment !== undefined) {
+      if (typeof payload.comment !== 'string') {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'comment', message: 'Comentário deve ser texto' }]
+        });
+      }
+      
+      const comment = sanitizeString(payload.comment);
+      
+      if (comment.length > 1000) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'comment', message: 'Comentário deve ter no máximo 1000 caracteres' }]
+        });
+      }
+      
+      if (comment.length < 10) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'comment', message: 'Comentário deve ter pelo menos 10 caracteres' }]
+        });
+      }
+      
+      if (/(.)\1{10,}/.test(comment)) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: [{ field: 'comment', message: 'Comentário inválido' }]
+        });
+      }
+      
+      updates.comment = comment;
+    }
 
     const { data, error } = await supabase
       .from('product_reviews')
@@ -297,6 +442,17 @@ export async function deleteReview(req, res) {
   try {
     const userId = req.user.id;
     const { id } = req.validatedParams ?? req.params;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: [{ field: 'id', message: uuidValidation.message }]
+      });
+    }
+    
+    secureLog('Deleting review', { userId, id });
 
     const { data, error } = await supabase
       .from('product_reviews')
@@ -329,6 +485,16 @@ export async function deleteReview(req, res) {
 export async function getProductReviewStats(req, res) {
   try {
     const { id: productId } = req.validatedParams ?? req.params;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(productId);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: [{ field: 'id', message: uuidValidation.message }]
+      });
+    }
+    
     const cacheKey = getProductStatsCacheKey(productId);
     const cached = await cacheGet(cacheKey);
 

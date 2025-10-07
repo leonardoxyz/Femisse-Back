@@ -33,8 +33,8 @@ router.post(
   createOrder
 );
 
-// Rotas administrativas (listar todos os pedidos)
-router.get('/', validateRequest(orderListQuerySchema, 'query'), listOrders);
+// Rotas administrativas (PROTEGIDAS - listar todos os pedidos)
+router.get('/', authenticateToken, validateRequest(orderListQuerySchema, 'query'), listOrders);
 
 // Rotas específicas por ID (devem vir por último)
 router.get(

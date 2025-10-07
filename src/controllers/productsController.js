@@ -8,6 +8,13 @@ import {
   cacheGetSetMembers,
   cacheClearSet,
 } from '../services/cacheService.js';
+import { 
+  validateUUID, 
+  sanitizeString,
+  validateLimit,
+  secureLog, 
+  getErrorMessage 
+} from '../utils/securityUtils.js';
 
 dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -32,39 +39,95 @@ const invalidateProductListsCache = async () => {
 };
 
 export async function getAllProducts(req, res) {
-  const { categoria_id, search, ids } = req.query;
-  let query = supabase.from('products').select('*');
-
-  const cacheKey = getProductsCacheKey(req.query);
-  const cached = await cacheGet(cacheKey);
-  if (cached) {
-    return res.json(cached);
-  }
-
-  // Filtro por IDs específicos (usado para favoritos)
-  if (ids) {
-    const idsArray = ids.split(',').map(id => id.trim()).filter(id => id);
-    if (idsArray.length > 0) {
-      query = query.in('id', idsArray);
+  try {
+    const { categoria_id, search, ids } = req.query;
+    
+    // Valida categoria_id se fornecido
+    if (categoria_id) {
+      const uuidValidation = validateUUID(categoria_id);
+      if (!uuidValidation.valid) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: 'ID da categoria inválido'
+        });
+      }
     }
-  }
+    
+    let query = supabase.from('products').select('*');
 
-  if (categoria_id) {
-    query = query.eq('categoria_id', categoria_id);
-  }
-  if (search && search.trim() !== "") {
-    // Busca case-insensitive por nome ou descrição
-    query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
-  }
+    const cacheKey = getProductsCacheKey(req.query);
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
 
-  const { data: products, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
+    // Filtro por IDs específicos (usado para favoritos)
+    if (ids) {
+      const idsArray = ids.split(',').map(id => id.trim()).filter(id => id);
+      
+      // Limita a 100 IDs
+      if (idsArray.length > 100) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: 'Máximo de 100 produtos por vez'
+        });
+      }
+      
+      // Valida cada ID
+      for (const id of idsArray) {
+        const uuidValidation = validateUUID(id);
+        if (!uuidValidation.valid) {
+          return res.status(400).json({ 
+            error: 'Dados inválidos',
+            details: 'Um ou mais IDs de produtos são inválidos'
+          });
+        }
+      }
+      
+      if (idsArray.length > 0) {
+        query = query.in('id', idsArray);
+      }
+    }
 
-  if (!products || products.length === 0) {
-    return res.json([]);
-  }
+    if (categoria_id) {
+      query = query.eq('categoria_id', categoria_id);
+    }
+    
+    // Sanitiza e valida busca
+    if (search && search.trim() !== "") {
+      const sanitizedSearch = sanitizeString(search.trim());
+      
+      // Limita tamanho da busca
+      if (sanitizedSearch.length > 100) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: 'Termo de busca muito longo (máximo 100 caracteres)'
+        });
+      }
+      
+      // Verifica se não é apenas caracteres especiais
+      if (sanitizedSearch.length < 2) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: 'Termo de busca deve ter pelo menos 2 caracteres'
+        });
+      }
+      
+      // Busca case-insensitive por nome ou descrição
+      query = query.or(`name.ilike.%${sanitizedSearch}%,description.ilike.%${sanitizedSearch}%`);
+    }
 
-  const imageIdSet = new Set();
+    const { data: products, error } = await query;
+    if (error) {
+      console.error('Erro ao buscar produtos:', error);
+      return res.status(500).json(getErrorMessage(error, 'Erro ao buscar produtos'));
+    }
+
+    if (!products || products.length === 0) {
+      return res.json([]);
+    }
+
+    const imageIdSet = new Set();
   products.forEach(product => {
     if (Array.isArray(product.image_ids)) {
       product.image_ids.filter(Boolean).forEach(id => imageIdSet.add(id));
@@ -102,28 +165,51 @@ export async function getAllProducts(req, res) {
     return { ...product, images: mergedImages };
   });
 
-  await cacheSet(cacheKey, productsWithImages, PRODUCTS_LIST_TTL);
-  await cacheAddToSet(PRODUCTS_LIST_KEYS_SET, cacheKey);
-  res.json(productsWithImages);
+    await cacheSet(cacheKey, productsWithImages, PRODUCTS_LIST_TTL);
+    await cacheAddToSet(PRODUCTS_LIST_KEYS_SET, cacheKey);
+    res.json(productsWithImages);
+  } catch (error) {
+    console.error('Erro inesperado ao buscar produtos:', error);
+    return res.status(500).json(getErrorMessage(error, 'Erro ao buscar produtos'));
+  }
 }
 
 export async function getProductById(req, res) {
-  const { id } = req.params;
+  try {
+    const { id } = req.params;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
 
-  const cacheKey = getProductDetailCacheKey(id);
-  const cached = await cacheGet(cacheKey);
-  if (cached) {
-    return res.json(cached);
-  }
+    const cacheKey = getProductDetailCacheKey(id);
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
 
-  const { data: product, error: productError } = await supabase
-    .from('products')
-    .select('*')
-    .eq('id', id)
-    .single();
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-  if (productError) return res.status(500).json({ error: productError.message });
-  if (!product) return res.status(404).json({ error: 'Produto não encontrado' });
+    if (productError) {
+      if (productError.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Produto não encontrado' });
+      }
+      console.error('Erro ao buscar produto:', productError);
+      return res.status(500).json(getErrorMessage(productError, 'Erro ao buscar produto'));
+    }
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Produto não encontrado' });
+    }
 
   let images = [];
   if (Array.isArray(product.image_ids) && product.image_ids.length > 0) {
@@ -146,9 +232,13 @@ export async function getProductById(req, res) {
     images = product.images;
   }
 
-  const response = { ...product, images };
-  await cacheSet(cacheKey, response, PRODUCTS_DETAIL_TTL);
-  res.json(response);
+    const response = { ...product, images };
+    await cacheSet(cacheKey, response, PRODUCTS_DETAIL_TTL);
+    res.json(response);
+  } catch (error) {
+    console.error('Erro inesperado ao buscar produto:', error);
+    return res.status(500).json(getErrorMessage(error, 'Erro ao buscar produto'));
+  }
 }
 
 export async function createProduct(req, res) {
@@ -194,34 +284,68 @@ export async function createProduct(req, res) {
 }
 
 export async function updateProduct(req, res) {
-  const { id } = req.params;
-  const fields = req.validatedBody ?? req.body;
-  if (!id) return res.status(400).json({ error: 'ID é obrigatório' });
+  try {
+    const { id } = req.params;
+    const fields = req.validatedBody ?? req.body;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
 
-  const { data, error } = await supabase
-    .from('products')
-    .update(fields)
-    .eq('id', id)
-    .select()
-    .single();
+    const { data, error } = await supabase
+      .from('products')
+      .update(fields)
+      .eq('id', id)
+      .select()
+      .single();
 
-  if (error) return res.status(500).json({ error: error.message });
-  await cacheDelete(getProductDetailCacheKey(id));
-  await invalidateProductListsCache();
-  res.json(data);
+    if (error) {
+      console.error('Erro ao atualizar produto:', error);
+      return res.status(500).json(getErrorMessage(error, 'Erro ao atualizar produto'));
+    }
+    
+    await cacheDelete(getProductDetailCacheKey(id));
+    await invalidateProductListsCache();
+    res.json(data);
+  } catch (error) {
+    console.error('Erro inesperado ao atualizar produto:', error);
+    return res.status(500).json(getErrorMessage(error, 'Erro ao atualizar produto'));
+  }
 }
 
 export async function deleteProduct(req, res) {
-  const { id } = req.params;
-  if (!id) return res.status(400).json({ error: 'ID é obrigatório' });
+  try {
+    const { id } = req.params;
+    
+    // Valida UUID
+    const uuidValidation = validateUUID(id);
+    if (!uuidValidation.valid) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: uuidValidation.message
+      });
+    }
 
-  const { error } = await supabase
-    .from('products')
-    .delete()
-    .eq('id', id);
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id);
 
-  if (error) return res.status(500).json({ error: error.message });
-  await cacheDelete(getProductDetailCacheKey(id));
-  await invalidateProductListsCache();
-  res.status(204).send();
+    if (error) {
+      console.error('Erro ao deletar produto:', error);
+      return res.status(500).json(getErrorMessage(error, 'Erro ao deletar produto'));
+    }
+    
+    await cacheDelete(getProductDetailCacheKey(id));
+    await invalidateProductListsCache();
+    res.status(204).send();
+  } catch (error) {
+    console.error('Erro inesperado ao deletar produto:', error);
+    return res.status(500).json(getErrorMessage(error, 'Erro ao deletar produto'));
+  }
 }
