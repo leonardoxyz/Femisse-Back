@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import validator from 'validator';
+import { validateTurnstileToken } from '../utils/turnstile.js';
 
 dotenv.config();
 
@@ -87,7 +88,7 @@ export async function register(req, res) {
   try {
     secureLog('Register attempt');
     
-    let { nome, data_nascimento, cpf, telefone, email, senha } = req.body;
+    let { nome, data_nascimento, cpf, telefone, email, senha, turnstileToken } = req.body;
     
     // 1. VALIDAÇÃO DE CAMPOS OBRIGATÓRIOS
     if (!nome || !email || !senha) {
@@ -96,6 +97,28 @@ export async function register(req, res) {
         details: [{ message: 'Nome, email e senha são obrigatórios' }]
       });
     }
+    
+    // 1.1. VALIDAÇÃO DO TURNSTILE (CAPTCHA)
+    if (!turnstileToken) {
+      return res.status(400).json({ 
+        error: 'Verificação de segurança obrigatória',
+        details: [{ message: 'Complete a verificação de segurança' }]
+      });
+    }
+    
+    // Validar token do Turnstile
+    const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+    const turnstileValidation = await validateTurnstileToken(turnstileToken, clientIP);
+    
+    if (!turnstileValidation.success) {
+      secureLog('Turnstile validation failed:', { error: turnstileValidation.error });
+      return res.status(400).json({ 
+        error: 'Falha na verificação de segurança',
+        details: [{ message: turnstileValidation.error || 'Verificação de segurança inválida' }]
+      });
+    }
+    
+    secureLog('Turnstile validation successful');
     
     // 2. SANITIZAÇÃO DE INPUTS
     nome = sanitizeString(nome);
@@ -204,7 +227,8 @@ export async function register(req, res) {
         data_nascimento: data.data_nascimento,
         cpf: data.cpf,
         telefone: data.telefone,
-      }
+      },
+      message: 'Usuário registrado com sucesso'
     });
   } catch (err) {
     console.error('Erro no registro:', err.message);
