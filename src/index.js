@@ -16,6 +16,7 @@ import favoriteRoutes from './routes/favoriteRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import statsRoutes from './routes/stats.js';
+import paymentRoutes from './routes/paymentRoutes.js';
 import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -150,6 +151,7 @@ app.use('/api/users/me', favoriteRoutes); // Rotas de usuário (favoritos)
 app.use('/api/orders', orderRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/stats', statsRoutes); // Rotas de estatísticas
+app.use('/api/payments', paymentRoutes); // Rotas de pagamento
 
 // Middleware de tratamento de erros
 app.use((err, req, res, next) => {
