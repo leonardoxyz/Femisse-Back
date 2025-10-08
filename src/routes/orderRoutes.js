@@ -7,6 +7,10 @@ import {
   updateOrder,
   deleteOrder,
 } from '../controllers/orderController.js';
+import {
+  updateOrderStatus,
+  listUserOrdersDebug,
+} from '../controllers/orderStatusController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import {
@@ -26,11 +30,21 @@ router.get(
   validateRequest(orderUserListQuerySchema, 'query'),
   listUserOrders
 );
+router.get(
+  '/user/orders/debug',
+  authenticateToken,
+  listUserOrdersDebug
+);
 router.post(
   '/user/orders',
   authenticateToken,
   validateRequest(orderCreateSchema),
   createOrder
+);
+router.patch(
+  '/user/orders/:orderId/status',
+  authenticateToken,
+  updateOrderStatus
 );
 
 // Rotas administrativas (PROTEGIDAS - listar todos os pedidos)

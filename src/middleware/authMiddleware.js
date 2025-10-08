@@ -1,62 +1,157 @@
-import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../utils/tokenManager.js';
+import { logger, logSecurity } from '../utils/logger.js';
+import { UnauthorizedError } from './errorHandler.js';
 
-// Validação crítica: JWT_SECRET deve existir
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET não configurado! Configure a variável de ambiente.');
-}
-
+/**
+ * Middleware de autenticação
+ * Verifica access token em cookies ou header Authorization
+ */
 export function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  if (!token) {
-    return res.status(401).json({ 
-      error: 'Não autorizado',
-      details: 'Token de acesso requerido' 
-    });
-  }
+  try {
+    // Tenta ler token do cookie primeiro (mais seguro)
+    let token = req.cookies?.accessToken;
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      // Log do erro para debugging (sem expor detalhes ao cliente)
-      console.error('Token verification failed:', err.message);
-      
-      return res.status(403).json({ 
+    // Fallback: lê do header Authorization (para compatibilidade)
+    if (!token) {
+      const authHeader = req.headers['authorization'];
+      token = authHeader && authHeader.split(' ')[1];
+    }
+
+    if (!token) {
+      logSecurity('auth_no_token', { ip: req.ip, path: req.path });
+      return res.status(401).json({
         error: 'Não autorizado',
-        details: 'Token inválido ou expirado' 
+        message: 'Token de acesso requerido',
       });
     }
-    
-    // Valida campos obrigatórios no token
+
+    // Verifica token
+    const user = verifyAccessToken(token);
+
+    // Valida campos obrigatórios
     if (!user.id || !user.email) {
-      console.error('Invalid token payload:', user);
-      return res.status(403).json({ 
+      logSecurity('auth_invalid_payload', { ip: req.ip });
+      return res.status(403).json({
         error: 'Não autorizado',
-        details: 'Token inválido' 
+        message: 'Token inválido',
       });
     }
-    
+
     req.user = user;
     next();
-  });
+  } catch (error) {
+    logger.warn({ err: error, ip: req.ip }, 'Falha na autenticação');
+
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        error: 'Token expirado',
+        message: 'Faça login novamente ou renove o token',
+      });
+    }
+
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(403).json({
+        error: 'Token inválido',
+        message: 'Token malformado ou inválido',
+      });
+    }
+
+    return res.status(403).json({
+      error: 'Não autorizado',
+      message: 'Falha na verificação do token',
+    });
+  }
 }
 
 /**
- * Middleware opcional de autenticação (não bloqueia se não houver token)
+ * Middleware opcional de autenticação
+ * Não bloqueia se não houver token
  */
 export function optionalAuth(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  if (!token) {
-    return next();
-  }
+  try {
+    // Tenta ler token do cookie primeiro
+    let token = req.cookies?.accessToken;
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (!err && user && user.id) {
+    // Fallback: lê do header Authorization
+    if (!token) {
+      const authHeader = req.headers['authorization'];
+      token = authHeader && authHeader.split(' ')[1];
+    }
+
+    if (!token) {
+      return next();
+    }
+
+    // Verifica token
+    const user = verifyAccessToken(token);
+
+    if (user && user.id) {
       req.user = user;
     }
+
     next();
-  });
+  } catch (error) {
+    // Em caso de erro, apenas continua sem autenticar
+    logger.debug({ err: error }, 'Token opcional inválido');
+    next();
+  }
+}
+
+/**
+ * Middleware para verificar se usuário é admin
+ */
+export function requireAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Não autorizado',
+      message: 'Autenticação requerida',
+    });
+  }
+
+  if (!req.user.isAdmin && !req.user.is_admin) {
+    logSecurity('unauthorized_admin_access', {
+      userId: req.user.id,
+      ip: req.ip,
+      path: req.path,
+    });
+
+    return res.status(403).json({
+      error: 'Acesso negado',
+      message: 'Permissões de administrador requeridas',
+    });
+  }
+
+  next();
+}
+
+/**
+ * Middleware para verificar se usuário está acessando seus próprios dados
+ */
+export function requireOwnership(paramName = 'id') {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        error: 'Não autorizado',
+        message: 'Autenticação requerida',
+      });
+    }
+
+    const resourceId = req.params[paramName];
+
+    if (req.user.id !== resourceId && !req.user.isAdmin) {
+      logSecurity('unauthorized_resource_access', {
+        userId: req.user.id,
+        resourceId,
+        ip: req.ip,
+        path: req.path,
+      });
+
+      return res.status(403).json({
+        error: 'Acesso negado',
+        message: 'Você não tem permissão para acessar este recurso',
+      });
+    }
+
+    next();
+  };
 }

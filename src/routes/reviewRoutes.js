@@ -37,6 +37,12 @@ router.get(
   listReviewableProducts
 );
 
+router.get(
+  '/reviewable',
+  authenticateToken,
+  listReviewableProducts
+);
+
 router.post(
   '/user/reviews',
   authenticateToken,

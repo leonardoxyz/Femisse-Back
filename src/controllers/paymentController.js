@@ -36,6 +36,22 @@ export async function createPaymentPreference(req, res) {
       payment_method: paymentData.payment_method 
     });
 
+    // PROTEÇÃO: Verificar se já existe pagamento aprovado para este pedido
+    const { data: existingPayment } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('order_id', order.id)
+      .eq('status', 'approved')
+      .single();
+
+    if (existingPayment) {
+      return res.status(400).json({ 
+        error: 'Pagamento já processado',
+        message: 'Este pedido já possui um pagamento aprovado. Não é possível pagar novamente.',
+        payment_id: existingPayment.mp_payment_id
+      });
+    }
+
     // Buscar itens do pedido
     const { data: orderItems, error: itemsError } = await supabase
       .from('order_items')
@@ -189,6 +205,22 @@ export async function processDirectPayment(req, res) {
       payment_method: paymentData.payment_method 
     });
 
+    // PROTEÇÃO: Verificar se já existe pagamento aprovado para este pedido
+    const { data: existingPayment } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('order_id', order.id)
+      .eq('status', 'approved')
+      .single();
+
+    if (existingPayment) {
+      return res.status(400).json({ 
+        error: 'Pagamento já processado',
+        message: 'Este pedido já possui um pagamento aprovado. Não é possível pagar novamente.',
+        payment_id: existingPayment.mp_payment_id
+      });
+    }
+
     const paymentPayload = {
       transaction_amount: paymentData.total_amount,
       payer: {
@@ -213,11 +245,18 @@ export async function processDirectPayment(req, res) {
       paymentPayload.notification_url = `${backendUrl}/api/payments/webhook`;
     }
 
-    // Para cartão: usar token (MP detecta automaticamente o payment_method_id)
+    // Para cartão: usar token e especificar tipo (débito ou crédito)
     if (paymentData.card_token && paymentData.payment_method !== 'pix') {
       paymentPayload.token = paymentData.card_token;
       paymentPayload.installments = paymentData.installments || 1;
-      // Não enviar payment_method_id quando usar token - MP detecta automaticamente
+      
+      // IMPORTANTE: Especificar se é débito ou crédito
+      // O MP precisa saber o tipo mesmo com token
+      if (paymentData.payment_method === 'debit_card') {
+        paymentPayload.payment_method_id = 'debit_card';
+      } else if (paymentData.payment_method === 'credit_card') {
+        paymentPayload.payment_method_id = 'credit_card';
+      }
     } else {
       // Para PIX: enviar payment_method_id
       paymentPayload.payment_method_id = paymentData.payment_method;
