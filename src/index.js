@@ -54,6 +54,20 @@ app.use(sanitizeInput);
 app.use(securityLogger);
 app.use(generalRateLimit);
 
+// Helper para validar origem considerando curingas (*.dominio.com)
+const isAllowedOrigin = (origin) => {
+  return CORS_ORIGINS.some((allowedOrigin) => {
+    if (allowedOrigin === origin) return true;
+
+    if (allowedOrigin.includes('*')) {
+      const regex = new RegExp(`^${allowedOrigin.replace(/\./g, '\\.').replace(/\*/g, '.*')}$`);
+      return regex.test(origin);
+    }
+
+    return false;
+  });
+};
+
 // Configuração CORS baseada no ambiente
 app.use(cors({
   origin: function (origin, callback) {
@@ -64,13 +78,12 @@ app.use(cors({
       return callback(null, true);
     }
     
-    // Permite origens específicas
-    if (CORS_ORIGINS.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
     
-    // Em produção, permite qualquer subdomínio da Vercel
-    if (isProduction && origin.includes('.vercel.app')) {
+    // Em produção, permite qualquer subdomínio da Vercel padrão
+    if (isProduction && origin.endsWith('.vercel.app')) {
       return callback(null, true);
     }
     

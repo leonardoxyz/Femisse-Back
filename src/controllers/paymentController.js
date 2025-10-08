@@ -191,7 +191,6 @@ export async function processDirectPayment(req, res) {
 
     const paymentPayload = {
       transaction_amount: paymentData.total_amount,
-      payment_method_id: paymentData.payment_method,
       payer: {
         email: paymentData.payer.email,
         first_name: paymentData.payer.first_name,
@@ -214,10 +213,14 @@ export async function processDirectPayment(req, res) {
       paymentPayload.notification_url = `${backendUrl}/api/payments/webhook`;
     }
 
-    // Adicionar token do cartão se necessário
+    // Para cartão: usar token (MP detecta automaticamente o payment_method_id)
     if (paymentData.card_token && paymentData.payment_method !== 'pix') {
       paymentPayload.token = paymentData.card_token;
       paymentPayload.installments = paymentData.installments || 1;
+      // Não enviar payment_method_id quando usar token - MP detecta automaticamente
+    } else {
+      // Para PIX: enviar payment_method_id
+      paymentPayload.payment_method_id = paymentData.payment_method;
     }
 
     // Gerar idempotency key única para evitar duplicação
