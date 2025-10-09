@@ -148,6 +148,8 @@ app.use(
       return callback(new Error('Not allowed by CORS'));
     },
     credentials: true, // Importante para cookies
+    exposedHeaders: ['set-cookie'], // Expõe header de cookies
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], // Headers permitidos
   })
 );
 
