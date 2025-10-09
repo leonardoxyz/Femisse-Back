@@ -11,6 +11,15 @@ export function authenticateToken(req, res, next) {
     // Tenta ler token do cookie primeiro (mais seguro)
     let token = req.cookies?.accessToken;
 
+    // DEBUG: Log para verificar cookies recebidos
+    logger.debug('Auth Debug', {
+      hasCookies: !!req.cookies,
+      cookieKeys: req.cookies ? Object.keys(req.cookies) : [],
+      hasAccessToken: !!token,
+      origin: req.headers.origin,
+      path: req.path
+    });
+
     // Fallback: lê do header Authorization (para compatibilidade)
     if (!token) {
       const authHeader = req.headers['authorization'];
@@ -18,7 +27,12 @@ export function authenticateToken(req, res, next) {
     }
 
     if (!token) {
-      logSecurity('auth_no_token', { ip: req.ip, path: req.path });
+      logSecurity('auth_no_token', { 
+        ip: req.ip, 
+        path: req.path,
+        origin: req.headers.origin,
+        cookies: req.cookies ? Object.keys(req.cookies) : []
+      });
       return res.status(401).json({
         error: 'Não autorizado',
         message: 'Token de acesso requerido',
