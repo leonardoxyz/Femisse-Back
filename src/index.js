@@ -66,6 +66,7 @@ app.use((req, res, next) => {
     /^\/api\/payments\/status\/.+$/,  // Status de pagamento
     /^\/api\/payments\/webhook$/,      // Webhook do MP
     /^\/api\/health$/,                 // Health check
+    /^\/api\/usuarios\/profile$/,      // ✅ Perfil do usuário (GET frequente)
   ];
 
   // Verifica se a rota atual está na lista de exclusão

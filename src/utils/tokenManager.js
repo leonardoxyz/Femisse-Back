@@ -164,7 +164,7 @@ export function setAuthCookies(res, accessToken, refreshToken) {
   res.cookie('accessToken', accessToken, {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict',
+    sameSite: isProduction ? 'none' : 'lax', // 'none' em prod para cross-domain, 'lax' em dev
     maxAge: 15 * 60 * 1000, // 15 minutos
     path: '/',
   });
@@ -173,7 +173,7 @@ export function setAuthCookies(res, accessToken, refreshToken) {
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict',
+    sameSite: isProduction ? 'none' : 'lax', // 'none' em prod para cross-domain
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dias
     path: '/api/auth',
   });

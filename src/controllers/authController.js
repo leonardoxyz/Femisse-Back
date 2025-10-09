@@ -249,6 +249,7 @@ export const login = asyncHandler(async (req, res) => {
   logSecurity('user_logged_in', { userId: usuario.id });
 
   // 10. Resposta (não retorna senha_hash)
+  // Token já está nos cookies httpOnly (mais seguro)
   res.json({
     usuario: {
       id: usuario.id,
