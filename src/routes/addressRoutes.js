@@ -19,9 +19,9 @@ router.use(strictRateLimit);
 router.get('/', validateRequest(addressListQuerySchema, 'query'), listAddresses);
 
 // Rotas do usuário autenticado (devem vir antes das rotas com parâmetros)
-router.get('/user/addresses', authenticateToken, listMyAddresses);
+router.get('/my', authenticateToken, listMyAddresses);
 router.post(
-  '/user/addresses',
+  '/my',
   authenticateToken,
   validateRequest(addressCreateSchema),
   createAddress

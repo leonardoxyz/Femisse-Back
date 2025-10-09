@@ -163,15 +163,78 @@ export async function listReviewableProducts(req, res) {
       return res.json(cached);
     }
 
-    const { data, error } = await supabase.rpc('list_user_reviewable_products', { p_user_id: userId });
-    console.log('RPC reviewable data:', data);
+    // Buscar pedidos entregues do usuário
+    const { data: orders, error: ordersError } = await supabase
+      .from('orders')
+      .select('id, created_at, status')
+      .eq('user_id', userId)
+      .eq('status', 'delivered')
+      .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Erro ao listar produtos avaliáveis:', error);
-      return res.status(500).json({ error: 'Erro ao listar produtos avaliáveis', details: error.message });
+    if (ordersError) {
+      console.error('Erro ao buscar pedidos:', ordersError);
+      return res.status(500).json({ error: 'Erro ao listar produtos avaliáveis', details: ordersError.message });
     }
 
-    const products = data ?? [];
+    if (!orders || orders.length === 0) {
+      await cacheSet(cacheKey, [], REVIEWABLE_LIST_TTL);
+      return res.json([]);
+    }
+
+    const orderIds = orders.map(o => o.id);
+
+    // Buscar itens dos pedidos
+    const { data: orderItems, error: itemsError } = await supabase
+      .from('order_items')
+      .select('order_id, product_id, product_name, product_image')
+      .in('order_id', orderIds);
+
+    if (itemsError) {
+      console.error('Erro ao buscar itens dos pedidos:', itemsError);
+      return res.status(500).json({ error: 'Erro ao listar produtos avaliáveis', details: itemsError.message });
+    }
+
+    // Buscar reviews existentes do usuário
+    const { data: existingReviews, error: reviewsError } = await supabase
+      .from('product_reviews')
+      .select('product_id, order_id')
+      .eq('user_id', userId);
+
+    if (reviewsError) {
+      console.error('Erro ao buscar reviews existentes:', reviewsError);
+      return res.status(500).json({ error: 'Erro ao listar produtos avaliáveis', details: reviewsError.message });
+    }
+
+    // Criar um Set de combinações produto+pedido que já foram avaliadas
+    const reviewedSet = new Set(
+      (existingReviews || []).map(r => `${r.product_id}_${r.order_id}`)
+    );
+
+    // Filtrar produtos que ainda não foram avaliados
+    const reviewableProducts = (orderItems || [])
+      .filter(item => !reviewedSet.has(`${item.product_id}_${item.order_id}`))
+      .map(item => {
+        const order = orders.find(o => o.id === item.order_id);
+        return {
+          product_id: item.product_id,
+          product_name: item.product_name,
+          product_image: item.product_image,
+          order_id: item.order_id,
+          order_date: order?.created_at,
+          has_review: false
+        };
+      });
+
+    // Remover duplicatas (mesmo produto em pedidos diferentes)
+    const uniqueProducts = new Map();
+    reviewableProducts.forEach(product => {
+      const key = `${product.product_id}_${product.order_id}`;
+      if (!uniqueProducts.has(key)) {
+        uniqueProducts.set(key, product);
+      }
+    });
+
+    const products = Array.from(uniqueProducts.values());
     const imageIds = new Set();
     products.forEach((product) => {
       normalizeImageRefs(product.product_image).forEach((id) => imageIds.add(id));

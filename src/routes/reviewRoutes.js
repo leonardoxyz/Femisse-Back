@@ -19,20 +19,20 @@ const router = express.Router();
 
 // Rotas do usuário autenticado para avaliações
 router.get(
-  '/user/reviews',
+  '/my',
   authenticateToken,
   listUserReviews
 );
 
 router.get(
-  '/user/reviewable-products',
+  '/my/reviewable-products',
   authenticateToken,
   listReviewableProducts
 );
 
 // Alias para compatibilidade
 router.get(
-  '/user/reviewable-items',
+  '/my/reviewable-items',
   authenticateToken,
   listReviewableProducts
 );
@@ -44,14 +44,14 @@ router.get(
 );
 
 router.post(
-  '/user/reviews',
+  '/my',
   authenticateToken,
   validateRequest(reviewCreateSchema),
   createReview
 );
 
 router.put(
-  '/user/reviews/:id',
+  '/my/:id',
   authenticateToken,
   validateRequest(reviewParamsSchema, 'params'),
   validateRequest(reviewUpdateSchema),
@@ -59,7 +59,7 @@ router.put(
 );
 
 router.delete(
-  '/user/reviews/:id',
+  '/my/:id',
   authenticateToken,
   validateRequest(reviewParamsSchema, 'params'),
   deleteReview

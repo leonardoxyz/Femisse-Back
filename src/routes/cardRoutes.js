@@ -5,8 +5,8 @@ import { authenticateToken } from '../middleware/authMiddleware.js';
 const router = express.Router();
 
 // Rotas do usuário autenticado para cartões de pagamento
-router.get('/user/cards', authenticateToken, listCards); // Listar cartões do usuário
-router.post('/user/cards', authenticateToken, createCard); // Adicionar novo cartão
+router.get('/my', authenticateToken, listCards); // Listar cartões do usuário
+router.post('/my', authenticateToken, createCard); // Adicionar novo cartão
 
 // Rotas específicas por ID (devem vir por último)
 router.get('/:id', authenticateToken, getCardById); // Buscar cartão por ID

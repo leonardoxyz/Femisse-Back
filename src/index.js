@@ -66,7 +66,7 @@ app.use((req, res, next) => {
     /^\/api\/payments\/status\/.+$/,  // Status de pagamento
     /^\/api\/payments\/webhook$/,      // Webhook do MP
     /^\/api\/health$/,                 // Health check
-    /^\/api\/usuarios\/profile$/,      // ✅ Perfil do usuário (GET frequente)
+    /^\/api\/users\/profile$/,         // ✅ Perfil do usuário (GET frequente)
   ];
 
   // Verifica se a rota atual está na lista de exclusão
@@ -198,9 +198,9 @@ app.use('/api/products', productRoutes);
 app.use('/api/popular', popularRoutes);
 app.use('/api/moment-products', momentProductsRoutes);
 app.use('/api/banner-images', bannerImagesRoutes);
-app.use('/api/usuarios', userRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
-app.use('/api/users/me', favoriteRoutes);
+app.use('/api/favorites', favoriteRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/stats', statsRoutes);

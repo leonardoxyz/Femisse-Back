@@ -163,8 +163,8 @@ export function setAuthCookies(res, accessToken, refreshToken) {
   // Configurações base dos cookies
   const cookieOptions = {
     httpOnly: true,
-    secure: true, // SEMPRE true (necessário para sameSite: 'none')
-    sameSite: isProduction ? 'none' : 'lax', // 'none' em prod para cross-domain
+    secure: isProduction, // ✅ true apenas em produção (HTTPS), false em dev (HTTP)
+    sameSite: isProduction ? 'none' : 'lax', // 'none' em prod para cross-domain, 'lax' em dev
   };
 
   // Access token (curta duração)
@@ -192,6 +192,24 @@ export function setAuthCookies(res, accessToken, refreshToken) {
  * Limpa cookies de autenticação
  */
 export function clearAuthCookies(res) {
-  res.clearCookie('accessToken', { path: '/' });
-  res.clearCookie('refreshToken', { path: '/api/auth' });
+  const isProduction = env.NODE_ENV === 'production';
+  
+  // ✅ Deve usar as MESMAS opções que foram usadas no setCookie
+  const cookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+  };
+  
+  res.clearCookie('accessToken', { 
+    ...cookieOptions,
+    path: '/' 
+  });
+  
+  res.clearCookie('refreshToken', { 
+    ...cookieOptions,
+    path: '/api/auth' 
+  });
+  
+  logger.info('Cookies de autenticação limpos');
 }

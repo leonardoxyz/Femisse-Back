@@ -25,24 +25,24 @@ const router = express.Router();
 
 // Rotas do usuário autenticado para pedidos
 router.get(
-  '/user/orders',
+  '/my',
   authenticateToken,
   validateRequest(orderUserListQuerySchema, 'query'),
   listUserOrders
 );
 router.get(
-  '/user/orders/debug',
+  '/my/debug',
   authenticateToken,
   listUserOrdersDebug
 );
 router.post(
-  '/user/orders',
+  '/my',
   authenticateToken,
   validateRequest(orderCreateSchema),
   createOrder
 );
 router.patch(
-  '/user/orders/:orderId/status',
+  '/my/:orderId/status',
   authenticateToken,
   updateOrderStatus
 );

@@ -7,11 +7,11 @@ import { favoriteBodySchema, favoriteParamSchema } from '../validators/favoriteS
 const router = express.Router();
 
 // Rotas do usuário autenticado para favoritos
-router.get('/favorites', authenticateToken, getFavorites); // Listar favoritos do usuário
-router.post('/favorites', authenticateToken, validateRequest(favoriteBodySchema), addFavorite); // Adicionar produto aos favoritos
-router.delete('/favorites/clear', authenticateToken, clearFavorites); // Limpar todos os favoritos
+router.get('/', authenticateToken, getFavorites); // Listar favoritos do usuário
+router.post('/', authenticateToken, validateRequest(favoriteBodySchema), addFavorite); // Adicionar produto aos favoritos
+router.delete('/clear', authenticateToken, clearFavorites); // Limpar todos os favoritos
 router.delete(
-  '/favorites/:productId',
+  '/:productId',
   authenticateToken,
   validateRequest(favoriteParamSchema, 'params'),
   removeFavorite
