@@ -18,6 +18,7 @@ import {
   sanitizeInput,
   securityLogger,
 } from './middleware/validationMiddleware.js';
+import { applySecurity } from './middleware/securityHeaders.js';
 
 // Importar rotas
 import addressRoutes from './routes/addressRoutes.js';
@@ -33,6 +34,7 @@ import orderRoutes from './routes/orderRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import statsRoutes from './routes/stats.js';
 import paymentRoutes from './routes/paymentRoutes.js';
+import couponRoutes from './routes/couponRoutes.js';
 
 const app = express();
 const PORT = env.PORT || 4000;
@@ -55,6 +57,8 @@ app.use(statsCollector);
 // ============================================
 // MIDDLEWARES DE SEGURANÇA
 // ============================================
+// ✅ HTTPS Forçado e Security Headers Avançados
+app.use(...applySecurity());
 app.use(securityHeaders);
 app.use(sanitizeInput);
 app.use(securityLogger);
@@ -205,6 +209,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/coupons', couponRoutes);
 
 // ============================================
 // TRATAMENTO DE ERROS

@@ -16,17 +16,33 @@ import {
   userParamsSchema,
   profileUpdateSchema,
 } from '../validators/userSchemas.js';
+import {
+  cpfVerificationLimiter,
+  cpfUpdateLimiter,
+  userRoutesLimiter
+} from '../middleware/cpfRateLimit.js';
 
 const router = express.Router();
 
+// ✅ Rate limit geral para todas as rotas de usuário
+router.use(userRoutesLimiter);
+
 // Rotas do usuário autenticado (devem vir antes das rotas com parâmetros)
-router.get('/profile', authenticateToken, getMyProfile); // Buscar perfil do usuário logado
+// ✅ Rate limit específico para verificação de CPF
+router.get('/profile', 
+  authenticateToken, 
+  cpfVerificationLimiter,  // 30 req / 15min
+  getMyProfile
+);
+
+// ✅ Rate limit mais restritivo para atualização de CPF
 router.put(
   '/profile',
   authenticateToken,
+  cpfUpdateLimiter,  // 5 req / hora
   validateRequest(profileUpdateSchema),
   updateMyProfile
-); // Atualizar perfil do usuário logado
+);
 
 // Rotas administrativas para gerenciamento de usuários
 router.get('/', listUsers); // Listar todos os usuários (admin)

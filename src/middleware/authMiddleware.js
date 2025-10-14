@@ -1,12 +1,13 @@
-import { verifyAccessToken } from '../utils/tokenManager.js';
+import { verifyAccessToken, verifyRefreshToken, generateAccessToken, validateRefreshToken, setAuthCookies } from '../utils/tokenManager.js';
 import { logger, logSecurity } from '../utils/logger.js';
 import { UnauthorizedError } from './errorHandler.js';
 
 /**
- * Middleware de autenticação
+ * Middleware de autenticação com renovação automática
  * Verifica access token em cookies ou header Authorization
+ * Se expirado, tenta renovar automaticamente com refresh token
  */
-export function authenticateToken(req, res, next) {
+export async function authenticateToken(req, res, next) {
   try {
     // Tenta ler token do cookie primeiro (mais seguro)
     let token = req.cookies?.accessToken;
@@ -56,10 +57,55 @@ export function authenticateToken(req, res, next) {
   } catch (error) {
     logger.warn({ err: error, ip: req.ip }, 'Falha na autenticação');
 
+    // ✅ Se token expirou, tenta renovar automaticamente com refresh token
     if (error.name === 'TokenExpiredError') {
+      const refreshToken = req.cookies?.refreshToken;
+      
+      if (refreshToken) {
+        try {
+          // Verifica refresh token
+          const refreshPayload = verifyRefreshToken(refreshToken);
+          
+          // Valida no banco
+          const tokenData = await validateRefreshToken(refreshToken);
+          
+          if (tokenData && tokenData.user_id === refreshPayload.id) {
+            // Gera novo access token
+            const newAccessToken = generateAccessToken({
+              id: refreshPayload.id,
+              email: refreshPayload.email,
+              nome: refreshPayload.nome
+            });
+            
+            // Define novo cookie
+            const isProduction = process.env.NODE_ENV === 'production';
+            res.cookie('accessToken', newAccessToken, {
+              httpOnly: true,
+              secure: isProduction,
+              sameSite: isProduction ? 'none' : 'lax',
+              maxAge: 15 * 60 * 1000, // 15 minutos
+              path: '/'
+            });
+            
+            // Define usuário e continua
+            req.user = {
+              id: refreshPayload.id,
+              email: refreshPayload.email,
+              nome: refreshPayload.nome
+            };
+            
+            logger.info('Token renovado automaticamente', { userId: refreshPayload.id });
+            return next();
+          }
+        } catch (refreshError) {
+          logger.warn('Falha ao renovar token automaticamente', { err: refreshError });
+        }
+      }
+      
       return res.status(401).json({
         error: 'Token expirado',
-        message: 'Faça login novamente ou renove o token',
+        message: 'Faça login novamente',
+        code: 'TOKEN_EXPIRED'
       });
     }
 

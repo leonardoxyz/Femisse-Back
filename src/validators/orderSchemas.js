@@ -73,6 +73,9 @@ export const orderCreateSchema = z.object({
   items: z.array(orderItemSchema).min(1, 'Inclua pelo menos um item no pedido'),
   notes: optionalString('Observações', 500),
   shipping: shippingSchema,
+  coupon_id: z.string().uuid('coupon_id inválido').optional(),
+  coupon_code: optionalString('Código do cupom', 50),
+  coupon_discount: moneySchema.optional(),
 });
 
 export const orderUpdateSchema = z

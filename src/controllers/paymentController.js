@@ -65,13 +65,48 @@ export async function createPaymentPreference(req, res) {
       });
     }
 
+    const shippingCost = Number(order.shipping_cost ?? 0);
+    const rawSubtotal = orderItems.reduce((sum, item) => sum + (Number(item.unit_price) * item.quantity), 0);
+    const orderSubtotal = Number(order.subtotal ?? rawSubtotal);
+    const orderTotal = Number(order.total ?? (orderSubtotal + shippingCost));
+    const discount = Number(order.discount ?? 0);
+    const couponDiscount = Number(order.coupon_discount ?? 0);
+    const totalDiscount = Number((discount + couponDiscount).toFixed(2));
+    const discountedSubtotal = Math.max(0, Number((orderTotal - shippingCost).toFixed(2)));
+
+    let adjustedItems = orderItems.map(item => ({ ...item }));
+    if (rawSubtotal > 0) {
+      const factor = discountedSubtotal > 0 ? discountedSubtotal / rawSubtotal : 0;
+      let runningTotal = 0;
+      adjustedItems = orderItems.map(item => {
+        const adjustedUnit = Number((Number(item.unit_price) * factor).toFixed(2));
+        runningTotal += adjustedUnit * item.quantity;
+        return {
+          ...item,
+          unit_price: adjustedUnit
+        };
+      });
+
+      let diff = Number((discountedSubtotal - runningTotal).toFixed(2));
+      if (adjustedItems.length > 0 && Math.abs(diff) >= 0.01) {
+        const lastIndex = adjustedItems.length - 1;
+        const lastItem = adjustedItems[lastIndex];
+        const perUnitAdjustment = Number((diff / lastItem.quantity).toFixed(2));
+        const adjustedUnitPrice = Math.max(0, Number((lastItem.unit_price + perUnitAdjustment).toFixed(2)));
+        adjustedItems[lastIndex] = {
+          ...lastItem,
+          unit_price: adjustedUnitPrice
+        };
+      }
+    }
+
     // Preparar dados para o Mercado Pago
     const preferenceData = {
-      items: orderItems.map(item => ({
+      items: adjustedItems.map(item => ({
         id: item.product_id,
         title: item.product_name,
         quantity: item.quantity,
-        unit_price: item.unit_price,
+        unit_price: Number(item.unit_price.toFixed(2)),
         currency_id: 'BRL'
       })),
       
@@ -144,7 +179,7 @@ export async function createPaymentPreference(req, res) {
         user_id: userId,
         preference_id: preference.id,
         payment_method: paymentData.payment_method,
-        amount: paymentData.total_amount,
+        amount: orderTotal,
         status: 'pending',
         mp_preference_data: preference,
         created_at: new Date().toISOString()
@@ -202,7 +237,12 @@ export async function processDirectPayment(req, res) {
     secureLog('Processing direct payment:', { 
       order_id: order.id, 
       userId,
-      payment_method: paymentData.payment_method 
+      payment_method: paymentData.payment_method,
+      order_subtotal: order.subtotal,
+      order_discount: order.discount,
+      order_coupon_discount: order.coupon_discount,
+      order_total: order.total,
+      payment_amount: paymentData.total_amount
     });
 
     // PROTEÇÃO: Verificar se já existe pagamento aprovado para este pedido
@@ -221,8 +261,28 @@ export async function processDirectPayment(req, res) {
       });
     }
 
+    // Calcular desconto total (discount + coupon_discount)
+    const totalDiscount = (parseFloat(order.discount) || 0) + (parseFloat(order.coupon_discount) || 0);
+    
+    console.log('=== PAYMENT PAYLOAD DEBUG ===');
+    console.log('Order Subtotal:', order.subtotal);
+    console.log('Order Discount:', order.discount);
+    console.log('Order Coupon Discount:', order.coupon_discount);
+    console.log('Order Total:', order.total);
+    console.log('Payment Amount:', paymentData.total_amount);
+    console.log('Total Discount:', totalDiscount);
+    console.log('============================');
+    
+    const pricing = req.orderPricing ?? {
+      subtotal: parseFloat(order.subtotal) || 0,
+      shippingCost: parseFloat(order.shipping_cost) || 0,
+      discount: parseFloat(order.discount) || 0,
+      couponDiscount: parseFloat(order.coupon_discount) || 0,
+      total: parseFloat(order.total) || paymentData.total_amount
+    };
+
     const paymentPayload = {
-      transaction_amount: paymentData.total_amount,
+      transaction_amount: pricing.total,
       payer: {
         email: paymentData.payer.email,
         first_name: paymentData.payer.first_name,
@@ -230,12 +290,17 @@ export async function processDirectPayment(req, res) {
         identification: paymentData.payer.identification
       },
       external_reference: order.id,
-      description: `Pedido #${order.order_number} - Femisse`,
+      description: `Pedido #${order.order_number} - Femisse${totalDiscount > 0 ? ` (Desconto: R$ ${totalDiscount.toFixed(2)})` : ''}`,
       metadata: {
         user_id: userId,
         order_id: order.id,
         order_number: order.order_number,
-        platform: 'femisse-ecommerce'
+        platform: 'femisse-ecommerce',
+        subtotal: pricing.subtotal,
+        shipping_cost: pricing.shippingCost,
+        discount: pricing.discount,
+        coupon_discount: pricing.couponDiscount,
+        coupon_code: order.coupon_code || null
       }
     };
 
@@ -262,6 +327,10 @@ export async function processDirectPayment(req, res) {
       paymentPayload.payment_method_id = paymentData.payment_method;
     }
 
+    // NOTA: Não enviamos coupon_amount/coupon_code para o Mercado Pago
+    // O desconto já está aplicado no transaction_amount (pricing.total)
+    // O MP não suporta cupons customizados em pagamentos diretos (PIX/cartão)
+
     // Gerar idempotency key única para evitar duplicação
     const idempotencyKey = `${order.id}-${Date.now()}`;
     
@@ -287,7 +356,7 @@ export async function processDirectPayment(req, res) {
         user_id: userId,
         mp_payment_id: payment.id,
         payment_method: paymentData.payment_method,
-        amount: payment.transaction_amount,
+        amount: pricing.total,
         status: payment.status,
         mp_payment_data: payment,
         created_at: new Date().toISOString()

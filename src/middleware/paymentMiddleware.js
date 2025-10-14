@@ -135,10 +135,10 @@ export const verifyOrderIntegrity = async (req, res, next) => {
     const { order_id, total_amount } = req.validatedPayment;
     const userId = req.user.id;
     
-    // Busca o pedido no banco
+    // Busca o pedido no banco com dados do cupom
     const { data: order, error } = await supabase
       .from('orders')
-      .select('id, user_id, total, status, payment_status')
+      .select('id, user_id, total, subtotal, shipping_cost, discount, status, payment_status, coupon_id, coupon_code, coupon_discount')
       .eq('id', order_id)
       .eq('user_id', userId)
       .single();
@@ -165,13 +165,165 @@ export const verifyOrderIntegrity = async (req, res, next) => {
       });
     }
     
-    // Verifica integridade do valor
-    if (Math.abs(order.total - total_amount) > 0.01) {
+    // Verifica integridade do valor considerando cupom
+    // Se houver cupom, valida que o desconto está correto
+    const subtotal = parseFloat(order.subtotal) || 0;
+    const shippingCost = parseFloat(order.shipping_cost) || 0;
+    const discount = parseFloat(order.discount) || 0;
+    const storedCouponDiscount = parseFloat(order.coupon_discount) || 0;
+
+    let expectedTotal = parseFloat(order.total);
+    if (!Number.isFinite(expectedTotal)) {
+      expectedTotal = subtotal - discount - storedCouponDiscount + shippingCost;
+    }
+    expectedTotal = Math.round(expectedTotal * 100) / 100;
+
+    let verifiedCouponDiscount = storedCouponDiscount;
+
+    if (order.coupon_id && order.coupon_code) {
+      // Buscar cupom no banco para validar desconto
+      const { data: coupon, error: couponError } = await supabase
+        .from('coupons')
+        .select('id, code, discount_type, discount_value, scope, active, valid_from, valid_to, applicable_categories, applicable_products')
+        .eq('id', order.coupon_id)
+        .single();
+      
+      if (couponError || !coupon) {
+        secureLog('Coupon not found during payment verification:', { 
+          order_id, 
+          userId,
+          coupon_id: order.coupon_id,
+          coupon_code: order.coupon_code
+        });
+        return res.status(400).json({ 
+          error: 'Cupom inválido',
+          details: 'O cupom aplicado não existe mais'
+        });
+      }
+      
+      // Verificar se cupom ainda está ativo e válido
+      if (!coupon.active) {
+        secureLog('Coupon inactive during payment:', { 
+          order_id, 
+          userId,
+          coupon_code: coupon.code
+        });
+        return res.status(400).json({ 
+          error: 'Cupom inativo',
+          details: 'O cupom aplicado não está mais ativo'
+        });
+      }
+      
+      const now = new Date();
+      const validFrom = new Date(coupon.valid_from);
+      const validTo = coupon.valid_to ? new Date(coupon.valid_to) : null;
+      
+      if (now < validFrom || (validTo && now > validTo)) {
+        secureLog('Coupon expired during payment:', { 
+          order_id, 
+          userId,
+          coupon_code: coupon.code
+        });
+        return res.status(400).json({ 
+          error: 'Cupom expirado',
+          details: 'O cupom aplicado expirou'
+        });
+      }
+      
+      // Recalcular desconto esperado baseado no cupom
+      let expectedDiscount = 0;
+      
+      // Validar que subtotal existe
+      if (subtotal <= 0) {
+        secureLog('Order subtotal missing or invalid:', { 
+          order_id, 
+          userId, 
+          subtotal: order.subtotal
+        });
+        return res.status(400).json({ 
+          error: 'Dados do pedido inválidos',
+          details: 'Subtotal do pedido não encontrado'
+        });
+      }
+      
+      if (coupon.discount_type === 'percentage') {
+        expectedDiscount = (subtotal * coupon.discount_value) / 100;
+      } else if (coupon.discount_type === 'fixed') {
+        expectedDiscount = Math.min(coupon.discount_value, subtotal);
+      }
+      
+      // Arredondar para 2 casas decimais
+      expectedDiscount = Math.round(expectedDiscount * 100) / 100;
+      verifiedCouponDiscount = expectedDiscount;
+
+      // Verificar se o desconto aplicado está correto (tolerância de 0.02 para arredondamento)
+      const discountDifference = Math.abs(storedCouponDiscount - expectedDiscount);
+      
+      if (discountDifference > 0.02) {
+        secureLog('Coupon discount mismatch:', { 
+          order_id, 
+          userId, 
+          coupon_code: coupon.code,
+          expected_discount: expectedDiscount,
+          applied_discount: order.coupon_discount,
+          difference: discountDifference
+        });
+        return res.status(400).json({ 
+          error: 'Desconto inválido',
+          details: 'O desconto do cupom foi manipulado'
+        });
+      }
+      
+      // Recalcular total esperado
+      expectedTotal = subtotal - discount - expectedDiscount + shippingCost;
+      expectedTotal = Math.round(expectedTotal * 100) / 100;
+
+      secureLog('Payment integrity check with coupon:', {
+        order_id,
+        userId,
+        coupon_code: coupon.code,
+        subtotal,
+        discount: order.discount,
+        expected_discount: expectedDiscount,
+        applied_discount: order.coupon_discount,
+        shipping: order.shipping_cost,
+        expected_total: expectedTotal,
+        payment_amount: total_amount
+      });
+    }
+    
+    // Verifica integridade do valor final (tolerância de 0.02 para arredondamento)
+    const totalDifference = Math.abs(expectedTotal - total_amount);
+    
+    // Log detalhado para debug
+    console.log('=== PAYMENT INTEGRITY CHECK ===');
+    console.log('Order ID:', order_id);
+    console.log('Order Data:', {
+      subtotal: order.subtotal,
+      shipping_cost: order.shipping_cost,
+      discount: order.discount,
+      coupon_discount: order.coupon_discount,
+      total: order.total
+    });
+    console.log('Expected Total:', expectedTotal);
+    console.log('Payment Amount:', total_amount);
+    console.log('Difference:', totalDifference);
+    console.log('Has Coupon:', !!order.coupon_id);
+    console.log('===============================');
+    
+    if (totalDifference > 0.02) {
       secureLog('Payment amount mismatch:', { 
         order_id, 
         userId,
+        order_subtotal: order.subtotal,
+        order_shipping: order.shipping_cost,
+        order_discount: order.discount,
+        order_coupon_discount: order.coupon_discount,
         order_total: order.total,
-        payment_amount: total_amount
+        expected_total: expectedTotal,
+        payment_amount: total_amount,
+        difference: totalDifference,
+        has_coupon: !!order.coupon_id
       });
       return res.status(400).json({ 
         error: 'Valor do pagamento não confere',
@@ -180,6 +332,13 @@ export const verifyOrderIntegrity = async (req, res, next) => {
     }
     
     req.orderData = order;
+    req.orderPricing = {
+      subtotal,
+      shippingCost,
+      discount,
+      couponDiscount: verifiedCouponDiscount,
+      total: expectedTotal
+    };
     next();
   } catch (error) {
     console.error('Order integrity verification error:', error);

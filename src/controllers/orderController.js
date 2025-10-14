@@ -16,6 +16,7 @@ import {
   secureLog, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
+import { registerCouponUsage } from './couponController.js';
 
 const ORDER_LIST_TTL = 120;
 const ORDER_DETAIL_TTL = 180;
@@ -41,9 +42,9 @@ const invalidateOrderDetailCache = async (orderId) => {
   await cacheDelete(getOrderDetailCacheKey(orderId));
 };
 
-const calculateOrderTotals = (items, shippingCost = 0, discount = 0) => {
+const calculateOrderTotals = (items, shippingCost = 0, discount = 0, couponDiscount = 0) => {
   const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const total = subtotal + shippingCost - discount;
+  const total = subtotal + shippingCost - discount - couponDiscount;
   return { subtotal, total };
 };
 
@@ -248,6 +249,15 @@ export async function createOrder(req, res) {
     const userId = req.user.id;
     const payload = req.validatedBody ?? req.body;
     
+    secureLog('CreateOrder payload received:', {
+      userId,
+      payment_method: payload.payment_method,
+      discount: payload.discount,
+      coupon_discount: payload.coupon_discount,
+      coupon_code: payload.coupon_code,
+      items: Array.isArray(payload.items) ? payload.items.length : 0
+    });
+
     secureLog('Creating order for user:', { userId });
 
     // Validação de itens
@@ -308,7 +318,7 @@ export async function createOrder(req, res) {
     }
     
     // Valida shipping_cost
-    const shippingCostValidation = validatePositiveDecimal(payload.shipping_cost ?? 0, 'Custo de envio');
+    const shippingCostValidation = validatePositiveDecimal(payload.shipping_cost ?? 0, 'Custo de envio', true);
     if (!shippingCostValidation.valid) {
       return res.status(400).json({ 
         error: 'Dados inválidos',
@@ -318,7 +328,7 @@ export async function createOrder(req, res) {
     const shippingCost = shippingCostValidation.value;
     
     // Valida discount
-    const discountValidation = validatePositiveDecimal(payload.discount ?? 0, 'Desconto');
+    const discountValidation = validatePositiveDecimal(payload.discount ?? 0, 'Desconto', true);
     if (!discountValidation.valid) {
       return res.status(400).json({ 
         error: 'Dados inválidos',
@@ -343,8 +353,21 @@ export async function createOrder(req, res) {
         details: 'Endereço de entrega é obrigatório'
       });
     }
+    
+    // Valida coupon_discount se fornecido
+    let couponDiscount = 0;
+    if (payload.coupon_discount !== undefined) {
+      const couponDiscountValidation = validatePositiveDecimal(payload.coupon_discount ?? 0, 'Desconto do cupom', true);
+      if (!couponDiscountValidation.valid) {
+        return res.status(400).json({ 
+          error: 'Dados inválidos',
+          details: couponDiscountValidation.message
+        });
+      }
+      couponDiscount = couponDiscountValidation.value;
+    }
 
-    const { subtotal, total } = calculateOrderTotals(items, shippingCost, discount);
+    const { subtotal, total } = calculateOrderTotals(items, shippingCost, discount, couponDiscount);
     
     // Valida total máximo (R$ 50.000)
     if (total > 50000) {
@@ -371,6 +394,10 @@ export async function createOrder(req, res) {
       discount,
       total,
       notes: payload.notes ? sanitizeString(payload.notes.substring(0, 500)) : null, // Limita a 500 caracteres
+      // Cupom de desconto (se aplicado)
+      coupon_id: payload.coupon_id ?? null,
+      coupon_code: payload.coupon_code ? sanitizeString(payload.coupon_code) : null,
+      coupon_discount: couponDiscount,
       ...normalizeShippingPayload(payload.shipping),
     };
 
@@ -395,6 +422,11 @@ export async function createOrder(req, res) {
     }
 
     const response = { ...order, items: itemsPayload };
+
+    // Registrar uso de cupom se aplicado
+    if (payload.coupon_id && couponDiscount > 0) {
+      await registerCouponUsage(payload.coupon_id, userId, order.id, couponDiscount);
+    }
 
     await invalidateUserOrderCaches(userId);
     await cacheSet(getOrderDetailCacheKey(order.id), response, ORDER_DETAIL_TTL);

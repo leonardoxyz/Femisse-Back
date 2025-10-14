@@ -175,10 +175,11 @@ export function setAuthCookies(res, accessToken, refreshToken) {
   });
 
   // Refresh token (longa duração)
+  // ✅ CORRIGIDO: path '/' para ser enviado em todas as requisições
   res.cookie('refreshToken', refreshToken, {
     ...cookieOptions,
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dias
-    path: '/api/auth',
+    path: '/', // ✅ Mudado de '/api/auth' para '/'
   });
 
   logger.info('Cookies de autenticação definidos', {
@@ -206,9 +207,10 @@ export function clearAuthCookies(res) {
     path: '/' 
   });
   
+  // ✅ CORRIGIDO: path '/' para corresponder ao setAuthCookies
   res.clearCookie('refreshToken', { 
     ...cookieOptions,
-    path: '/api/auth' 
+    path: '/' // ✅ Mudado de '/api/auth' para '/'
   });
   
   logger.info('Cookies de autenticação limpos');
