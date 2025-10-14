@@ -35,6 +35,8 @@ import reviewRoutes from './routes/reviewRoutes.js';
 import statsRoutes from './routes/stats.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import couponRoutes from './routes/couponRoutes.js';
+import shippingRoutes from './routes/shippingRoutes.js';
+import webhookRoutes from './routes/webhookRoutes.js';
 
 const app = express();
 const PORT = env.PORT || 4000;
@@ -69,6 +71,7 @@ app.use((req, res, next) => {
   const excludedPaths = [
     /^\/api\/payments\/status\/.+$/,  // Status de pagamento
     /^\/api\/payments\/webhook$/,      // Webhook do MP
+    /^\/api\/webhooks\/.+$/,           // Webhooks (MelhorEnvio, etc)
     /^\/api\/health$/,                 // Health check
     /^\/api\/users\/profile$/,         // ✅ Perfil do usuário (GET frequente)
   ];
@@ -210,6 +213,8 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/shipping', shippingRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // ============================================
 // TRATAMENTO DE ERROS
