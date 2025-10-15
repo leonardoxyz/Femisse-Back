@@ -214,6 +214,12 @@ export const refreshAccessToken = async (userId) => {
  */
 export const getValidToken = async (userId) => {
   try {
+    // FALLBACK: Se houver token fixo configurado, usa ele
+    if (process.env.MELHORENVIO_ACCESS_TOKEN) {
+      return { success: true, token: process.env.MELHORENVIO_ACCESS_TOKEN };
+    }
+
+    // Caso contrário, busca token OAuth2 do usuário
     const { data: tokenData, error } = await supabase
       .from('melhorenvio_tokens')
       .select('*')
@@ -286,8 +292,10 @@ export const calculateShipping = async (userId, shippingData) => {
 
     const response = await api.post('/me/shipment/calculate', payload);
 
-    // Salva cotações no banco
-    const quotes = response.data.map(quote => ({
+    // Filtra apenas cotações válidas (sem erro) e salva no banco
+    const validQuotes = response.data.filter(quote => !quote.error);
+    
+    const quotes = validQuotes.map(quote => ({
       user_id: userId,
       order_id: shippingData.orderId || null,
       service_id: quote.id,
@@ -295,17 +303,17 @@ export const calculateShipping = async (userId, shippingData) => {
       company_id: quote.company.id,
       company_name: quote.company.name,
       company_picture: quote.company.picture,
-      price: quote.price,
-      custom_price: quote.custom_price,
-      discount: quote.discount,
-      delivery_time: quote.delivery_time,
-      custom_delivery_time: quote.custom_delivery_time,
-      delivery_range: quote.delivery_range,
-      packages: quote.packages,
+      price: parseFloat(quote.custom_price || quote.price || 0),
+      custom_price: parseFloat(quote.custom_price || quote.price || 0),
+      discount: parseFloat(quote.discount || 0),
+      delivery_time: parseInt(quote.custom_delivery_time || quote.delivery_time || 0),
+      custom_delivery_time: parseInt(quote.custom_delivery_time || quote.delivery_time || 0),
+      delivery_range: quote.delivery_range || null,
+      packages: quote.packages || payload.products || [],
       from_zip_code: shippingData.fromZipCode,
       to_zip_code: shippingData.toZipCode,
       additional_services: payload.options,
-      insurance_value: shippingData.products.reduce((sum, p) => sum + (p.insuranceValue || p.price), 0),
+      insurance_value: shippingData.products.reduce((sum, p) => sum + (p.insuranceValue || p.price || 0), 0),
       quote_data: quote
     }));
 
@@ -321,14 +329,14 @@ export const calculateShipping = async (userId, shippingData) => {
     await logOperation('calculate_shipping', 'success', {
       userId,
       orderId: shippingData.orderId,
-      message: `${response.data.length} cotações calculadas`,
+      message: `${validQuotes.length} cotações válidas de ${response.data.length} calculadas`,
       request: payload,
-      response: { count: response.data.length }
+      response: { total: response.data.length, valid: validQuotes.length }
     });
 
     return { 
       success: true, 
-      data: response.data,
+      data: validQuotes, // Retorna apenas cotações válidas
       savedQuotes: savedQuotes || []
     };
   } catch (error) {

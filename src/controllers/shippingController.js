@@ -114,6 +114,16 @@ export async function checkAuthStatus(req, res) {
   try {
     const userId = req.user.id;
     
+    // Se houver token fixo configurado, sempre retorna autorizado
+    if (process.env.MELHORENVIO_ACCESS_TOKEN) {
+      return res.json({ 
+        authorized: true,
+        mode: 'fixed_token',
+        message: 'Usando token de acesso fixo do MelhorEnvio'
+      });
+    }
+    
+    // Caso contrário, verifica token OAuth2 do usuário
     const { data: token, error } = await supabase
       .from('melhorenvio_tokens')
       .select('expires_at, created_at')
@@ -132,6 +142,7 @@ export async function checkAuthStatus(req, res) {
     
     return res.json({ 
       authorized: !isExpired,
+      mode: 'oauth2',
       expiresAt: token.expires_at,
       authorizedSince: token.created_at
     });

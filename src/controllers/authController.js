@@ -245,7 +245,12 @@ export const login = asyncHandler(async (req, res) => {
   // 9. Define cookies httpOnly
   setAuthCookies(res, accessToken, refreshToken);
 
-  logger.info({ userId: usuario.id }, 'Login bem-sucedido');
+  logger.info({ 
+    userId: usuario.id,
+    userAgent: req.headers['user-agent'],
+    origin: req.headers.origin,
+    isMobile: /mobile/i.test(req.headers['user-agent'] || '')
+  }, 'Login bem-sucedido - cookies definidos');
   logSecurity('user_logged_in', { userId: usuario.id });
 
   // 10. Resposta (não retorna senha_hash)

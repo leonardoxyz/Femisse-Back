@@ -398,6 +398,13 @@ export async function createOrder(req, res) {
       coupon_id: payload.coupon_id ?? null,
       coupon_code: payload.coupon_code ? sanitizeString(payload.coupon_code) : null,
       coupon_discount: couponDiscount,
+      // Informações de frete do MelhorEnvio
+      shipping_service_id: payload.shipping_service_id ?? null,
+      shipping_service_name: payload.shipping_service_name ? sanitizeString(payload.shipping_service_name) : null,
+      shipping_company_id: payload.shipping_company_id ?? null,
+      shipping_company_name: payload.shipping_company_name ? sanitizeString(payload.shipping_company_name) : null,
+      shipping_delivery_time: payload.shipping_delivery_time ?? null,
+      shipping_quote_id: payload.shipping_quote_id ?? null,
       ...normalizeShippingPayload(payload.shipping),
     };
 

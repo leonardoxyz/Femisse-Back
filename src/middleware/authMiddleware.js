@@ -12,22 +12,28 @@ export async function authenticateToken(req, res, next) {
     // Tenta ler token do cookie primeiro (mais seguro)
     let token = req.cookies?.accessToken;
 
-    // DEBUG: Log para verificar cookies recebidos
-    logger.debug('Auth Debug', {
+    // DEBUG: Log detalhado para verificar cookies recebidos
+    console.log('🔐 Auth Debug:', {
+      path: req.path,
+      method: req.method,
       hasCookies: !!req.cookies,
       cookieKeys: req.cookies ? Object.keys(req.cookies) : [],
       hasAccessToken: !!token,
       origin: req.headers.origin,
-      path: req.path
+      userAgent: req.headers['user-agent']?.substring(0, 50)
     });
 
     // Fallback: lê do header Authorization (para compatibilidade)
     if (!token) {
       const authHeader = req.headers['authorization'];
       token = authHeader && authHeader.split(' ')[1];
+      if (token) {
+        console.log('⚠️ Token encontrado no header Authorization (fallback)');
+      }
     }
 
     if (!token) {
+      console.log('❌ Nenhum token encontrado');
       logSecurity('auth_no_token', { 
         ip: req.ip, 
         path: req.path,
@@ -42,9 +48,11 @@ export async function authenticateToken(req, res, next) {
 
     // Verifica token
     const user = verifyAccessToken(token);
+    console.log('✅ Token verificado com sucesso:', { userId: user.id, email: user.email });
 
     // Valida campos obrigatórios
     if (!user.id || !user.email) {
+      console.log('❌ Token inválido - campos obrigatórios ausentes');
       logSecurity('auth_invalid_payload', { ip: req.ip });
       return res.status(403).json({
         error: 'Não autorizado',
@@ -53,6 +61,7 @@ export async function authenticateToken(req, res, next) {
     }
 
     req.user = user;
+    console.log('✅ Usuário autenticado:', { userId: user.id, path: req.path });
     next();
   } catch (error) {
     logger.warn({ err: error, ip: req.ip }, 'Falha na autenticação');

@@ -160,32 +160,32 @@ export async function cleanExpiredTokens() {
 export function setAuthCookies(res, accessToken, refreshToken) {
   const isProduction = env.NODE_ENV === 'production';
 
-  // Configurações base dos cookies
+  // ✅ CORREÇÃO CRÍTICA: Em produção com HTTPS, usar sameSite='none' + secure=true
+  // Em desenvolvimento ou se não for HTTPS, usar sameSite='lax' + secure=false
   const cookieOptions = {
     httpOnly: true,
-    secure: isProduction, // ✅ true apenas em produção (HTTPS), false em dev (HTTP)
-    sameSite: isProduction ? 'none' : 'lax', // 'none' em prod para cross-domain, 'lax' em dev
+    secure: isProduction, // true em produção (HTTPS), false em dev
+    sameSite: isProduction ? 'none' : 'lax', // 'none' requer secure=true
+    path: '/',
   };
 
   // Access token (curta duração)
   res.cookie('accessToken', accessToken, {
     ...cookieOptions,
     maxAge: 15 * 60 * 1000, // 15 minutos
-    path: '/',
   });
 
   // Refresh token (longa duração)
-  // ✅ CORRIGIDO: path '/' para ser enviado em todas as requisições
   res.cookie('refreshToken', refreshToken, {
     ...cookieOptions,
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dias
-    path: '/', // ✅ Mudado de '/api/auth' para '/'
   });
 
   logger.info('Cookies de autenticação definidos', {
     production: isProduction,
     sameSite: cookieOptions.sameSite,
-    secure: cookieOptions.secure
+    secure: cookieOptions.secure,
+    path: cookieOptions.path
   });
 }
 

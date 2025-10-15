@@ -72,26 +72,26 @@ export async function getUserById(req, res) {
 export async function getMyProfile(req, res) {
   try {
     const userId = req.user.id; // ID do usuário autenticado
-    console.log('Buscando perfil do usuário logado:', userId);
+    console.log('🔍 Buscando perfil do usuário:', userId);
     
     const { data, error } = await supabase
       .from('usuarios')
-      .select('*')
+      .select('id, nome, email, data_nascimento, cpf, telefone')
       .eq('id', userId)
       .single();
     
-    console.log('Resultado da busca do perfil:', { data, error });
-    
     if (error) {
+      console.error('❌ Erro ao buscar perfil:', error);
       if (error.code === 'PGRST116') {
         return res.status(404).json({ error: 'Perfil não encontrado' });
       }
       throw error;
     }
     
+    console.log('✅ Perfil encontrado:', { id: data.id, email: data.email });
     res.json(data);
   } catch (err) {
-    console.error('Erro ao buscar perfil:', err);
+    console.error('❌ Erro ao buscar perfil:', err);
     res.status(500).json({ error: 'Erro ao buscar perfil', details: err.message });
   }
 }
