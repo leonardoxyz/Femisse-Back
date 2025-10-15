@@ -255,6 +255,7 @@ export const login = asyncHandler(async (req, res) => {
 
   // 10. Resposta (não retorna senha_hash)
   // Token já está nos cookies httpOnly (mais seguro)
+  // ✅ MOBILE FIX: Também retorna tokens no body para compatibilidade mobile
   res.json({
     usuario: {
       id: usuario.id,
@@ -262,6 +263,9 @@ export const login = asyncHandler(async (req, res) => {
       email: usuario.email,
     },
     message: 'Login realizado com sucesso',
+    // Tokens para fallback mobile (quando cookies são bloqueados)
+    accessToken,
+    refreshToken,
   });
 });
 

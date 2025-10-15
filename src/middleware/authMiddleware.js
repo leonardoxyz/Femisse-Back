@@ -41,8 +41,8 @@ export async function authenticateToken(req, res, next) {
         cookies: req.cookies ? Object.keys(req.cookies) : []
       });
       return res.status(401).json({
-        error: 'Não autorizado',
-        message: 'Token de acesso requerido',
+        error: 'Acesso não autorizado',
+        message: 'Token de autenticação não fornecido'
       });
     }
 
