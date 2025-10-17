@@ -1,5 +1,24 @@
-# Logs
-logs
+# ============================================
+# DEPENDÊNCIAS
+# ============================================
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ============================================
+# ARQUIVOS DE BUILD
+# ============================================
+dist/
+dist-ssr/
+build/
+.cache/
+*.tsbuildinfo
+
+# ============================================
+# LOGS
+# ============================================
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,20 +26,71 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# ============================================
+# VARIÁVEIS DE AMBIENTE
+# ============================================
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env.*.local
+.env.migration
+*.env
 
-# Editor directories and files
+# ============================================
+# ARQUIVOS TEMPORÁRIOS E BACKUP
+# ============================================
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+src/backup/
+backup/
+
+# ============================================
+# EDITORES E IDEs
+# ============================================
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+!.vscode/settings.json
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-*.env
-*.env.migration
+.project
+.classpath
+.settings/
+
+# ============================================
+# TESTES E COVERAGE
+# ============================================
+coverage/
+.nyc_output/
+*.lcov
+
+# ============================================
+# SISTEMA OPERACIONAL
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ============================================
+# DADOS SENSÍVEIS
+# ============================================
+*.pem
+*.key
+*.cert
+secrets/
+credentials/

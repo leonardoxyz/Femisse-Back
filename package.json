@@ -9,8 +9,6 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "build": "echo 'Starting build...' && terser src/index.js -o dist/index.min.js && echo 'Minification complete.' && cpx \"src/**/*\" dist && echo 'Files copied to dist.' && echo 'Build process completed successfully.'",
-    "check-env": "node check-env.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
@@ -39,10 +37,8 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
-    "cpx": "^1.5.0",
     "jest": "^29.7.0",
     "nodemon": "^3.0.3",
-    "supertest": "^7.0.0",
-    "terser": "^5.15.1"
+    "supertest": "^7.0.0"
   }
 }
