@@ -1,4 +1,5 @@
 const toPublicCategory = (category) => ({
+  id: category.id,
   name: category.name,
   image: category.image,
 });

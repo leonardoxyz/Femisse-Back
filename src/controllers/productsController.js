@@ -43,15 +43,19 @@ export async function getAllProducts(req, res) {
   try {
     const { categoria_id, search, ids } = req.query;
     
+    console.log('🔍 getAllProducts chamado com:', { categoria_id, search, ids });
+    
     // Valida categoria_id se fornecido
     if (categoria_id) {
       const uuidValidation = validateUUID(categoria_id);
       if (!uuidValidation.valid) {
+        console.error('❌ categoria_id inválido:', categoria_id);
         return res.status(400).json({ 
           error: 'Dados inválidos',
           details: 'ID da categoria inválido'
         });
       }
+      console.log('✅ categoria_id válido:', categoria_id);
     }
     
     let query = supabase.from('products').select('*');
@@ -59,6 +63,7 @@ export async function getAllProducts(req, res) {
     const cacheKey = getProductsCacheKey(req.query);
     const cached = await cacheGet(cacheKey);
     if (cached) {
+      console.log('📦 Retornando do cache:', cached.length, 'produtos');
       return res.json({ success: true, data: cached });
     }
 
@@ -91,7 +96,10 @@ export async function getAllProducts(req, res) {
     }
 
     if (categoria_id) {
+      console.log('🎯 Aplicando filtro: categoria_id =', categoria_id);
       query = query.eq('categoria_id', categoria_id);
+    } else {
+      console.log('📋 Sem filtro de categoria - buscando TODOS os produtos');
     }
     
     // Sanitiza e valida busca
@@ -120,53 +128,41 @@ export async function getAllProducts(req, res) {
 
     const { data: products, error } = await query;
     if (error) {
-      console.error('Erro ao buscar produtos:', error);
+      console.error('❌ Erro ao buscar produtos:', error);
       return res.status(500).json(getErrorMessage(error, 'Erro ao buscar produtos'));
     }
 
+    console.log(`✅ Query retornou ${products?.length || 0} produtos do banco`);
+    
+    if (categoria_id && products && products.length > 0) {
+      // Verificar se todos os produtos pertencem à categoria solicitada
+      const correctCategory = products.filter(p => p.categoria_id === categoria_id).length;
+      const wrongCategory = products.filter(p => p.categoria_id !== categoria_id).length;
+      
+      console.log('📊 Análise dos produtos do banco:', {
+        total: products.length,
+        categoriaCorreta: correctCategory,
+        categoriaErrada: wrongCategory,
+        primeiros3: products.slice(0, 3).map(p => ({ 
+          name: p.name, 
+          categoria_id: p.categoria_id 
+        }))
+      });
+      
+      if (wrongCategory > 0) {
+        console.error('⚠️ ERRO: Banco retornou produtos de outras categorias!');
+      }
+    }
+
     if (!products || products.length === 0) {
+      console.log('📭 Nenhum produto encontrado');
       return res.json({ success: true, data: [] });
     }
 
-    const imageIdSet = new Set();
-  products.forEach(product => {
-    if (Array.isArray(product.image_ids)) {
-      product.image_ids.filter(Boolean).forEach(id => imageIdSet.add(id));
-    }
-  });
+    // ✅ SIMPLIFICADO: images_urls já vem do banco, não precisa de join
+    console.log('✅ Produtos carregados com images_urls do banco');
 
-  let imageMap = new Map();
-  if (imageIdSet.size > 0) {
-    const imageIds = Array.from(imageIdSet);
-    const { data: imageData, error: imageError } = await supabase
-      .from('images')
-      .select('id, image_url')
-      .in('id', imageIds);
-
-    if (imageError) {
-      console.error('Erro ao buscar imagens dos produtos:', imageError);
-    } else if (imageData) {
-      imageMap = new Map(imageData.map(img => [img.id, img.image_url]));
-    }
-  }
-
-  const productsWithImages = products.map(product => {
-    const relatedImages = Array.isArray(product.image_ids)
-      ? product.image_ids
-          .map(id => imageMap.get(id))
-          .filter(Boolean)
-      : [];
-
-    const mergedImages = relatedImages.length > 0
-      ? relatedImages
-      : Array.isArray(product.images)
-        ? product.images
-        : [];
-
-    return { ...product, images: mergedImages };
-  });
-
-    const formattedProducts = toPublicProductList(productsWithImages);
+    const formattedProducts = toPublicProductList(products);
     await cacheSet(cacheKey, formattedProducts, PRODUCTS_LIST_TTL);
     await cacheAddToSet(PRODUCTS_LIST_KEYS_SET, cacheKey);
     res.json({ success: true, data: formattedProducts });
@@ -213,29 +209,9 @@ export async function getProductById(req, res) {
       return res.status(404).json({ error: 'Produto não encontrado' });
     }
 
-  let images = [];
-  if (Array.isArray(product.image_ids) && product.image_ids.length > 0) {
-    const { data: imageData, error: imageError } = await supabase
-      .from('images')
-      .select('id, image_url')
-      .in('id', product.image_ids);
-
-    if (imageError) {
-      console.error('Erro ao buscar imagens do produto:', imageError);
-    } else if (imageData) {
-      const imageMap = new Map(imageData.map(img => [img.id, img.image_url]));
-      images = product.image_ids
-        .map(id => imageMap.get(id))
-        .filter(Boolean);
-    }
-  }
-
-  if (images.length === 0 && Array.isArray(product.images)) {
-    images = product.images;
-  }
-
-    const productWithImages = { ...product, images };
-    const formattedProduct = toPublicProduct(productWithImages);
+    // ✅ SIMPLIFICADO: images_urls já vem do banco
+    console.log('✅ Produto carregado com images_urls do banco');
+    const formattedProduct = toPublicProduct(product);
     await cacheSet(cacheKey, formattedProduct, PRODUCTS_DETAIL_TTL);
     res.json({ success: true, data: formattedProduct });
   } catch (error) {

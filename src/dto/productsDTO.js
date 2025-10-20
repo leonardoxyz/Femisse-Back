@@ -1,40 +1,52 @@
-const toPublicProduct = (product) => ({
-  name: product.name,
-  description: product.description ?? null,
-  price: product.price,
-  originalPrice: product.original_price ?? null,
-  image: product.image ?? null,
-  images: product.images ?? [],
-  badge: product.badge ?? null,
-  badgeVariant: product.badge_variant ?? null,
-  sizes: product.sizes ?? [],
-  colors: product.colors ?? [],
-  inStock: product.in_stock ?? true,
-  stock: product.stock ?? null,
-});
+const toPublicProduct = (product) => {
+  // ✅ REFATORADO: Usar images_urls diretamente
+  const imagesList = product.images_urls ?? [];
+  
+  return {
+    name: product.name,
+    description: product.description ?? null,
+    price: product.price,
+    originalPrice: product.original_price ?? null,
+    image: imagesList.length > 0 ? imagesList[0] : null, // Primeira imagem como principal
+    images: imagesList, // Array de URLs
+    badge: product.badge ?? null,
+    badgeVariant: product.badge_variant ?? null,
+    sizes: product.sizes ?? [],
+    colors: product.colors ?? [],
+    inStock: product.in_stock ?? true,
+    stock: product.stock ?? null,
+    categoriaId: product.categoria_id ?? null,
+  };
+};
 
 const toPublicProductList = (products = []) =>
   (Array.isArray(products) ? products : []).map(toPublicProduct);
 
-const toAdminProduct = (product) => ({
-  id: product.id,
-  name: product.name,
-  description: product.description ?? null,
-  price: product.price,
-  originalPrice: product.original_price ?? null,
-  image: product.image ?? null,
-  images: product.images ?? [],
-  imageIds: product.image_ids ?? [],
-  badge: product.badge ?? null,
-  badgeVariant: product.badge_variant ?? null,
-  sizes: product.sizes ?? [],
-  colors: product.colors ?? [],
-  inStock: product.in_stock ?? true,
-  stock: product.stock ?? null,
-  categoriaId: product.categoria_id ?? null,
-  createdAt: product.created_at,
-  updatedAt: product.updated_at,
-});
+const toAdminProduct = (product) => {
+  // ✅ REFATORADO: Usar images_urls diretamente
+  const imagesList = product.images_urls ?? [];
+  
+  return {
+    id: product.id,
+    name: product.name,
+    description: product.description ?? null,
+    price: product.price,
+    originalPrice: product.original_price ?? null,
+    image: imagesList.length > 0 ? imagesList[0] : null, // Primeira imagem como principal
+    images: imagesList, // Array de URLs
+    imagesUrls: product.images_urls ?? [], // Campo novo explícito para admin
+    imageIds: product.image_ids ?? [], // Manter para retrocompatibilidade (será removido)
+    badge: product.badge ?? null,
+    badgeVariant: product.badge_variant ?? null,
+    sizes: product.sizes ?? [],
+    colors: product.colors ?? [],
+    inStock: product.in_stock ?? true,
+    stock: product.stock ?? null,
+    categoriaId: product.categoria_id ?? null,
+    createdAt: product.created_at,
+    updatedAt: product.updated_at,
+  };
+};
 
 const toAdminProductList = (products = []) =>
   (Array.isArray(products) ? products : []).map(toAdminProduct);
@@ -108,22 +120,29 @@ const validateProductInput = (input) => {
   };
 };
 
-const sanitizeProductInput = (input) => ({
-  name: input.name?.trim(),
-  description: input.description?.trim() || null,
-  price: input.price !== undefined ? Number(input.price) : null,
-  original_price: input.original_price !== undefined ? Number(input.original_price) : null,
-  image: input.image?.trim() || null,
-  images: Array.isArray(input.images) ? input.images : [],
-  image_ids: Array.isArray(input.image_ids) ? input.image_ids : [],
-  badge: input.badge?.trim() || null,
-  badge_variant: input.badge_variant?.trim() || null,
-  sizes: Array.isArray(input.sizes) ? input.sizes : [],
-  colors: Array.isArray(input.colors) ? input.colors : [],
-  stock: input.stock !== undefined ? Number(input.stock) : null,
-  in_stock: input.in_stock ?? true,
-  categoria_id: input.categoria_id?.trim() || null,
-});
+const sanitizeProductInput = (input) => {
+  // ✅ REFATORADO: Aceitar images_urls diretamente
+  const imagesList = Array.isArray(input.images_urls) 
+    ? input.images_urls.map(url => url?.trim()).filter(Boolean) 
+    : [];
+  
+  return {
+    name: input.name?.trim(),
+    description: input.description?.trim() || null,
+    price: input.price !== undefined ? Number(input.price) : null,
+    original_price: input.original_price !== undefined ? Number(input.original_price) : null,
+    images_urls: imagesList, // Novo campo
+    // Campo antigo mantido para retrocompatibilidade (será removido)
+    image_ids: Array.isArray(input.image_ids) ? input.image_ids : [],
+    badge: input.badge?.trim() || null,
+    badge_variant: input.badge_variant?.trim() || null,
+    sizes: Array.isArray(input.sizes) ? input.sizes : [],
+    colors: Array.isArray(input.colors) ? input.colors : [],
+    stock: input.stock !== undefined ? Number(input.stock) : null,
+    in_stock: input.in_stock ?? true,
+    categoria_id: input.categoria_id?.trim() || null,
+  };
+};
 
 export {
   toPublicProduct,
