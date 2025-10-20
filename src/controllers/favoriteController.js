@@ -1,4 +1,5 @@
 import supabase from '../services/supabaseClient.js';
+import { toPublicFavoriteList } from '../dto/favoriteDTO.js';
 
 export async function listFavorites(req, res) {
   try {
@@ -9,16 +10,17 @@ export async function listFavorites(req, res) {
       query = query.eq('usuario_id', usuario_id);
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data = [], error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       throw error;
     }
 
-    res.json(data ?? []);
+    const favorites = toPublicFavoriteList(data);
+    res.json({ success: true, data: favorites });
   } catch (error) {
     console.error('Erro ao listar favoritos:', error);
-    res.status(500).json({ error: 'Erro ao listar favoritos' });
+    res.status(500).json({ success: false, message: 'Erro ao listar favoritos', details: error.message });
   }
 }
 

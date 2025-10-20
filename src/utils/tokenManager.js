@@ -18,11 +18,15 @@ export function generateAccessToken(payload) {
 
 /**
  * Gera refresh token (longa duração)
+ * @param {Object} payload
+ * @param {Boolean} rememberMe
  */
-export function generateRefreshToken(payload) {
+export function generateRefreshToken(payload, rememberMe = false) {
   const refreshSecret = env.JWT_REFRESH_SECRET || env.JWT_SECRET;
+  const expiresIn = rememberMe ? '30d' : '7d';
+  
   return jwt.sign(payload, refreshSecret, {
-    expiresIn: env.JWT_REFRESH_EXPIRES_IN,
+    expiresIn,
     issuer: 'feminisse-api',
     audience: 'feminisse-app',
   });
@@ -59,11 +63,15 @@ export function verifyRefreshToken(token) {
 
 /**
  * Salva refresh token no banco
+ * @param {String} userId - ID do usuário
+ * @param {String} token - Token a ser salvo
+ * @param {Boolean} rememberMe - Se true, expira em 30 dias; se false, 7 dias
  */
-export async function saveRefreshToken(userId, token) {
+export async function saveRefreshToken(userId, token, rememberMe = false) {
   try {
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30); // 30 dias
+    const daysToAdd = rememberMe ? 30 : 7;
+    expiresAt.setDate(expiresAt.getDate() + daysToAdd);
 
     const { error } = await supabase
       .from('refresh_tokens')
@@ -156,8 +164,12 @@ export async function cleanExpiredTokens() {
 
 /**
  * Define cookies de autenticação
+ * @param {Object} res - Response object
+ * @param {String} accessToken - Access token
+ * @param {String} refreshToken - Refresh token
+ * @param {Boolean} rememberMe - Se true, cookie dura 30 dias; se false, 7 dias
  */
-export function setAuthCookies(res, accessToken, refreshToken) {
+export function setAuthCookies(res, accessToken, refreshToken, rememberMe = false) {
   const isProduction = env.NODE_ENV === 'production';
 
   // ✅ CORREÇÃO CRÍTICA: Em produção com HTTPS, usar sameSite='none' + secure=true
@@ -175,17 +187,23 @@ export function setAuthCookies(res, accessToken, refreshToken) {
     maxAge: 15 * 60 * 1000, // 15 minutos
   });
 
-  // Refresh token (longa duração)
+  // Refresh token (duração variável)
+  const refreshMaxAge = rememberMe 
+    ? 30 * 24 * 60 * 60 * 1000  // 30 dias
+    : 7 * 24 * 60 * 60 * 1000;  // 7 dias
+  
   res.cookie('refreshToken', refreshToken, {
     ...cookieOptions,
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 dias
+    maxAge: refreshMaxAge,
   });
 
   logger.info('Cookies de autenticação definidos', {
     production: isProduction,
     sameSite: cookieOptions.sameSite,
     secure: cookieOptions.secure,
-    path: cookieOptions.path
+    path: cookieOptions.path,
+    rememberMe: rememberMe,
+    refreshTokenDuration: rememberMe ? '30 dias' : '7 dias'
   });
 }
 

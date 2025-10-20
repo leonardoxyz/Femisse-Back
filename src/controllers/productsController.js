@@ -15,6 +15,7 @@ import {
   secureLog, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
+import { toPublicProductList, toPublicProduct } from '../dto/productsDTO.js';
 
 dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -58,7 +59,7 @@ export async function getAllProducts(req, res) {
     const cacheKey = getProductsCacheKey(req.query);
     const cached = await cacheGet(cacheKey);
     if (cached) {
-      return res.json(cached);
+      return res.json({ success: true, data: cached });
     }
 
     // Filtro por IDs específicos (usado para favoritos)
@@ -124,7 +125,7 @@ export async function getAllProducts(req, res) {
     }
 
     if (!products || products.length === 0) {
-      return res.json([]);
+      return res.json({ success: true, data: [] });
     }
 
     const imageIdSet = new Set();
@@ -165,12 +166,13 @@ export async function getAllProducts(req, res) {
     return { ...product, images: mergedImages };
   });
 
-    await cacheSet(cacheKey, productsWithImages, PRODUCTS_LIST_TTL);
+    const formattedProducts = toPublicProductList(productsWithImages);
+    await cacheSet(cacheKey, formattedProducts, PRODUCTS_LIST_TTL);
     await cacheAddToSet(PRODUCTS_LIST_KEYS_SET, cacheKey);
-    res.json(productsWithImages);
+    res.json({ success: true, data: formattedProducts });
   } catch (error) {
     console.error('Erro inesperado ao buscar produtos:', error);
-    return res.status(500).json(getErrorMessage(error, 'Erro ao buscar produtos'));
+    return res.status(500).json({ success: false, message: 'Erro ao buscar produtos', details: error.message });
   }
 }
 
@@ -190,7 +192,7 @@ export async function getProductById(req, res) {
     const cacheKey = getProductDetailCacheKey(id);
     const cached = await cacheGet(cacheKey);
     if (cached) {
-      return res.json(cached);
+      return res.json({ success: true, data: cached });
     }
 
     const { data: product, error: productError } = await supabase
@@ -232,12 +234,13 @@ export async function getProductById(req, res) {
     images = product.images;
   }
 
-    const response = { ...product, images };
-    await cacheSet(cacheKey, response, PRODUCTS_DETAIL_TTL);
-    res.json(response);
+    const productWithImages = { ...product, images };
+    const formattedProduct = toPublicProduct(productWithImages);
+    await cacheSet(cacheKey, formattedProduct, PRODUCTS_DETAIL_TTL);
+    res.json({ success: true, data: formattedProduct });
   } catch (error) {
     console.error('Erro inesperado ao buscar produto:', error);
-    return res.status(500).json(getErrorMessage(error, 'Erro ao buscar produto'));
+    return res.status(500).json({ success: false, message: 'Erro ao buscar produto', details: error.message });
   }
 }
 

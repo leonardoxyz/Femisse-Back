@@ -1,19 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
+import { toPublicPopularList } from '../dto/popularDTO.js';
 
-dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 export const getPopular = async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data = [], error } = await supabase
       .from('popular')
       .select('*')
       .order('id', { ascending: true });
     
     if (error) throw error;
-    res.json(data || []);
+
+    const populars = toPublicPopularList(data);
+
+    res.json({
+      success: true,
+      data: populars,
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao buscar produtos populares', details: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao buscar produtos populares',
+      details: error.message,
+    });
   }
 };

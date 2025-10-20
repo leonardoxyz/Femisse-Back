@@ -37,6 +37,7 @@ import paymentRoutes from './routes/paymentRoutes.js';
 import couponRoutes from './routes/couponRoutes.js';
 import shippingRoutes from './routes/shippingRoutes.js';
 import webhookRoutes from './routes/webhookRoutes.js';
+import testimonialRoutes from './routes/testimonialRoutes.js';
 
 const app = express();
 const PORT = env.PORT || 4000;
@@ -215,6 +216,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/testimonials', testimonialRoutes);
 
 // ============================================
 // TRATAMENTO DE ERROS

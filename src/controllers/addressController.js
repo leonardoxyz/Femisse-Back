@@ -6,6 +6,7 @@ import {
   secureLog, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
+import { toPublicAddressList } from '../dto/addressDTO.js';
 
 dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -247,7 +248,7 @@ export async function listMyAddresses(req, res) {
   try {
     const usuario_id = req.user.id;
     
-    const { data, error } = await supabase
+    const { data = [], error } = await supabase
       .from('address')
       .select('*')
       .eq('usuario_id', usuario_id)
@@ -255,9 +256,10 @@ export async function listMyAddresses(req, res) {
     
     if (error) throw error;
     
-    res.json(data || []);
+    const addresses = toPublicAddressList(data);
+    res.json({ success: true, data: addresses });
   } catch (err) {
     console.error('Erro ao listar endereços do usuário:', err);
-    res.status(500).json({ error: 'Erro ao listar endereços do usuário autenticado', details: err.message });
+    res.status(500).json({ success: false, message: 'Erro ao listar endereços do usuário autenticado', details: err.message });
   }
 }

@@ -11,6 +11,10 @@ import {
   secureLog, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
+import { 
+  toPublicReviewList, 
+  toPublicReviewableProductList 
+} from '../dto/reviewDTO.js';
 
 const REVIEW_LIST_TTL = 120;
 const REVIEWABLE_LIST_TTL = 120;
@@ -76,16 +80,14 @@ const resolvePrimaryImage = (imageRef, imageMap) => {
 };
 
 const formatReviewResponse = (review, imageMap) => ({
-  id: review.id,
-  user_id: review.user_id,
-  product_id: review.product_id,
-  product_name: review.product_name,
-  product_image: resolvePrimaryImage(review.product_image, imageMap),
+  reviewId: review.id,
+  productId: review.product_id,
   rating: review.rating,
   comment: review.comment,
-  created_at: review.created_at,
-  updated_at: review.updated_at,
-  can_edit: true,
+  productName: review.product_name,
+  productImage: resolvePrimaryImage(review.product_image, imageMap),
+  createdAt: review.created_at,
+  updatedAt: review.updated_at ?? null,
 });
 
 const invalidateUserReviewCaches = async (userId) => {
@@ -122,34 +124,55 @@ export async function listUserReviews(req, res) {
     const cached = await cacheGet(cacheKey);
 
     if (cached) {
-      return res.json(cached);
+      return res.json({ success: true, data: cached });
     }
 
     const { data, error } = await supabase
-      .from('product_reviews_detailed')
-      .select('*')
+      .from('product_reviews')
+      .select(`
+        id,
+        user_id,
+        product_id,
+        order_id,
+        rating,
+        comment,
+        created_at,
+        updated_at,
+        products!inner(name, image_ids)
+      `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Erro ao listar avaliações:', error);
-      return res.status(500).json({ error: 'Erro ao listar avaliações', details: error.message });
+      return res.status(500).json({ success: false, message: 'Erro ao listar avaliações', details: error.message });
     }
 
     const reviews = data ?? [];
     const allImageIds = new Set();
     reviews.forEach((review) => {
-      normalizeImageRefs(review.product_image).forEach((id) => allImageIds.add(id));
+      if (review.products?.image_ids) {
+        normalizeImageRefs(review.products.image_ids).forEach((id) => allImageIds.add(id));
+      }
     });
 
     const imageMap = await fetchImagesByIds(allImageIds);
-    const formatted = reviews.map((review) => formatReviewResponse(review, imageMap));
+    const rawReviews = reviews.map((review) => ({
+      reviewId: review.id,
+      rating: review.rating,
+      comment: review.comment,
+      productName: review.products?.name ?? null,
+      productImage: review.products?.image_ids ? resolvePrimaryImage(review.products.image_ids, imageMap) : null,
+      createdAt: review.created_at,
+      updatedAt: review.updated_at ?? null,
+    }));
+    const formatted = toPublicReviewList(rawReviews);
 
     await cacheSet(cacheKey, formatted, REVIEW_LIST_TTL);
-    return res.json(formatted);
+    return res.json({ success: true, data: formatted });
   } catch (error) {
     console.error('Erro inesperado ao listar avaliações:', error);
-    return res.status(500).json({ error: 'Erro interno ao listar avaliações' });
+    return res.status(500).json({ success: false, message: 'Erro interno ao listar avaliações', details: error.message });
   }
 }
 
@@ -241,20 +264,21 @@ export async function listReviewableProducts(req, res) {
     });
 
     const imageMap = await fetchImagesByIds(imageIds);
-    const formatted = products.map((product) => ({
-      id: product.product_id,
+    const rawProducts = products.map((product) => ({
+      productId: product.product_id,
+      orderId: product.order_id,
       name: product.product_name,
       image: resolvePrimaryImage(product.product_image, imageMap),
-      order_id: product.order_id,
-      order_date: product.order_date,
-      has_review: product.has_review,
+      orderDate: product.order_date,
+      hasReview: product.has_review,
     }));
 
+    const formatted = toPublicReviewableProductList(rawProducts);
     await cacheSet(cacheKey, formatted, REVIEWABLE_LIST_TTL);
-    return res.json(formatted);
+    return res.json({ success: true, data: formatted });
   } catch (error) {
     console.error('Erro inesperado ao listar produtos avaliáveis:', error);
-    return res.status(500).json({ error: 'Erro interno ao listar produtos avaliáveis' });
+    return res.status(500).json({ success: false, message: 'Erro interno ao listar produtos avaliáveis', details: error.message });
   }
 }
 

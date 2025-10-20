@@ -11,6 +11,7 @@ import {
   secureLog, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
+import { toPublicProfile } from '../dto/userDTO.js';
 
 dotenv.config();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -83,16 +84,17 @@ export async function getMyProfile(req, res) {
     if (error) {
       console.error('❌ Erro ao buscar perfil:', error);
       if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Perfil não encontrado' });
+        return res.status(404).json({ success: false, message: 'Perfil não encontrado' });
       }
       throw error;
     }
     
     console.log('✅ Perfil encontrado:', { id: data.id, email: data.email });
-    res.json(data);
+    const profile = toPublicProfile(data);
+    res.json({ success: true, data: profile });
   } catch (err) {
     console.error('❌ Erro ao buscar perfil:', err);
-    res.status(500).json({ error: 'Erro ao buscar perfil', details: err.message });
+    res.status(500).json({ success: false, message: 'Erro ao buscar perfil', details: err.message });
   }
 }
 

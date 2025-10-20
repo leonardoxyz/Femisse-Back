@@ -17,6 +17,7 @@ import {
   getErrorMessage 
 } from '../utils/securityUtils.js';
 import { registerCouponUsage } from './couponController.js';
+import { toPublicOrderList } from '../dto/orderDTO.js';
 
 const ORDER_LIST_TTL = 120;
 const ORDER_DETAIL_TTL = 180;
@@ -124,7 +125,7 @@ export async function listUserOrders(req, res) {
     const cacheKey = getUserOrdersCacheKey(userId, paramsHash);
     const cached = await cacheGet(cacheKey);
     if (cached) {
-      return res.json(cached);
+      return res.json({ success: true, data: cached });
     }
 
     let query = supabase
@@ -148,13 +149,14 @@ export async function listUserOrders(req, res) {
     }
 
     const orders = data ?? [];
-    await cacheSet(cacheKey, orders, ORDER_LIST_TTL);
+    const formattedOrders = toPublicOrderList(orders);
+    await cacheSet(cacheKey, formattedOrders, ORDER_LIST_TTL);
     await cacheAddToSet(getUserOrdersSetKey(userId), cacheKey);
 
-    return res.json(orders);
+    return res.json({ success: true, data: formattedOrders });
   } catch (error) {
     console.error('Erro inesperado ao listar pedidos do usuário:', error);
-    return res.status(500).json({ error: 'Erro interno ao listar pedidos' });
+    return res.status(500).json({ success: false, message: 'Erro interno ao listar pedidos', details: error.message });
   }
 }
 

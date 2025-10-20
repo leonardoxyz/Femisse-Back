@@ -176,7 +176,7 @@ export const register = asyncHandler(async (req, res) => {
 export const login = asyncHandler(async (req, res) => {
   logger.info({ ip: req.ip }, 'Tentativa de login');
 
-  let { email, senha } = req.body;
+  let { email, senha, rememberMe } = req.body;
 
   // 1. Validação de campos obrigatórios
   if (!email || !senha) {
@@ -237,13 +237,13 @@ export const login = asyncHandler(async (req, res) => {
   };
 
   const accessToken = generateAccessToken(payload);
-  const refreshToken = generateRefreshToken(payload);
+  const refreshToken = generateRefreshToken(payload, rememberMe);
 
   // 8. Salva refresh token no banco
-  await saveRefreshToken(usuario.id, refreshToken);
+  await saveRefreshToken(usuario.id, refreshToken, rememberMe);
 
   // 9. Define cookies httpOnly
-  setAuthCookies(res, accessToken, refreshToken);
+  setAuthCookies(res, accessToken, refreshToken, rememberMe);
 
   logger.info({ 
     userId: usuario.id,
