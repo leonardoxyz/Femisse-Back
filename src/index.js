@@ -228,16 +228,18 @@ app.use('/api/*', notFoundHandler);
 app.use(errorHandler);
 
 // ============================================
-// INICIAR SERVIDOR
+// INICIAR SERVIDOR (apenas em modo não-serverless)
 // ============================================
-app.listen(PORT, () => {
-  logger.info({
-    port: PORT,
-    env: env.NODE_ENV,
-    corsOrigins: CORS_ORIGINS,
-  }, 'Servidor iniciado com sucesso');
+// Vercel usa serverless, então não precisa de app.listen()
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    logger.info({
+      port: PORT,
+      env: env.NODE_ENV,
+      corsOrigins: CORS_ORIGINS,
+    }, 'Servidor iniciado com sucesso');
 
-  console.log(`
+    console.log(`
 ╔════════════════════════════════════════╗
 ║   🚀 Femisse API v2.0                  ║
 ║   📍 Porta: ${PORT}                    ║
@@ -245,28 +247,32 @@ app.listen(PORT, () => {
 ║   🔒 Segurança: Ativada                ║
 ║   🍪 Cookies: httpOnly                 ║
 ╚════════════════════════════════════════╝
-  `);
-});
+    `);
+  });
 
-// Tratamento de erros não capturados
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error({ reason, promise }, 'Unhandled Rejection');
-});
+  // Tratamento de erros não capturados
+  process.on('unhandledRejection', (reason, promise) => {
+    logger.error({ reason, promise }, 'Unhandled Rejection');
+  });
 
-process.on('uncaughtException', (error) => {
-  logger.fatal({ err: error }, 'Uncaught Exception');
-  process.exit(1);
-});
+  process.on('uncaughtException', (error) => {
+    logger.fatal({ err: error }, 'Uncaught Exception');
+    process.exit(1);
+  });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    logger.info('SIGTERM received, shutting down gracefully');
+    process.exit(0);
+  });
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
+  process.on('SIGINT', () => {
+    logger.info('SIGINT received, shutting down gracefully');
+    process.exit(0);
+  });
+} else {
+  logger.info('Running in Vercel serverless mode');
+}
 
+// Exportar app para Vercel
 export default app;
