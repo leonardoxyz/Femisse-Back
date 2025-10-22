@@ -54,8 +54,8 @@ function securityHeaders(req, res, next) {
   // Previne XSS e injeção de conteúdo malicioso
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com https://challenges.cloudflare.com",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "script-src 'self' https://sdk.mercadopago.com https://challenges.cloudflare.com",
+    "style-src 'self' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: https: blob:",
     "connect-src 'self' https://api.mercadopago.com https://*.supabase.co wss://*.supabase.co",

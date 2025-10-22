@@ -89,8 +89,9 @@ export async function getMyProfile(req, res) {
       throw error;
     }
     
-    console.log('✅ Perfil encontrado:', { id: data.id, email: data.email });
+    console.log('✅ Dados do banco:', data);
     const profile = toPublicProfile(data);
+    console.log('✅ Perfil após DTO:', profile);
     res.json({ success: true, data: profile });
   } catch (err) {
     console.error('❌ Erro ao buscar perfil:', err);

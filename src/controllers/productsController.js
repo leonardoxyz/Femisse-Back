@@ -1,5 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
+import supabase from '../services/supabaseClient.js';
 import {
   cacheGet,
   cacheSet,
@@ -11,14 +10,10 @@ import {
 import { 
   validateUUID, 
   sanitizeString,
-  validateLimit,
-  secureLog, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
 import { toPublicProductList, toPublicProduct } from '../dto/productsDTO.js';
-
-dotenv.config();
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+import { generateSlug } from '../utils/slugGenerator.js';
 
 const PRODUCTS_LIST_KEYS_SET = 'cache:products:list-keys';
 const PRODUCTS_LIST_TTL = 120;
@@ -41,29 +36,57 @@ const invalidateProductListsCache = async () => {
 
 export async function getAllProducts(req, res) {
   try {
-    const { categoria_id, search, ids } = req.query;
+    let { categoria_slug, search, ids } = req.validatedQuery || req.query;
+    let categoria_id = null;
     
-    console.log('🔍 getAllProducts chamado com:', { categoria_id, search, ids });
+    if (categoria_slug && typeof categoria_slug !== 'string') {
+      categoria_slug = String(categoria_slug);
+    }
     
-    // Valida categoria_id se fornecido
-    if (categoria_id) {
-      const uuidValidation = validateUUID(categoria_id);
-      if (!uuidValidation.valid) {
-        console.error('❌ categoria_id inválido:', categoria_id);
-        return res.status(400).json({ 
-          error: 'Dados inválidos',
-          details: 'ID da categoria inválido'
+    console.log('🔍 getAllProducts chamado com:', { categoria_slug, search, ids });
+    
+    // Se fornecido slug, busca o ID da categoria
+    if (categoria_slug && categoria_slug.trim() !== '') {
+      const slugTrimmed = categoria_slug.trim();
+      console.log('🔍 Buscando categoria com slug:', slugTrimmed);
+      
+      // Busca TODAS as categorias e compara slug gerado
+      const { data: allCategories, error: categoriesError } = await supabase
+        .from('categories')
+        .select('id, name');
+      
+      if (categoriesError || !allCategories) {
+        console.error('❌ Erro ao buscar categorias:', categoriesError);
+        return res.status(500).json({ 
+          error: 'Erro ao buscar categorias',
+          details: categoriesError?.message || 'Erro desconhecido'
         });
       }
-      console.log('✅ categoria_id válido:', categoria_id);
+      
+      // Gera slug do nome e compara
+      const foundCategory = allCategories.find(cat => generateSlug(cat.name) === slugTrimmed);
+      
+      if (!foundCategory) {
+        console.error('❌ Categoria não encontrada para slug:', slugTrimmed);
+        return res.status(404).json({ 
+          error: 'Categoria não encontrada',
+          details: `Nenhuma categoria com slug "${slugTrimmed}" foi encontrada`
+        });
+      }
+      
+      categoria_id = foundCategory.id;
+      console.log('✅ Categoria encontrada:', { slug: slugTrimmed, name: foundCategory.name, id: categoria_id });
+    } else {
+      console.log('📋 Sem filtro de categoria - buscando TODOS os produtos');
     }
     
     let query = supabase.from('products').select('*');
 
-    const cacheKey = getProductsCacheKey(req.query);
+    // Cria chave de cache com dados validados
+    const cacheKey = getProductsCacheKey({ categoria_id, search, ids });
     const cached = await cacheGet(cacheKey);
     if (cached) {
-      console.log('📦 Retornando do cache:', cached.length, 'produtos');
+      console.log('📦 Retornando do cache:', cached.length, 'produtos com categoria_id:', categoria_id);
       return res.json({ success: true, data: cached });
     }
 
@@ -95,6 +118,7 @@ export async function getAllProducts(req, res) {
       }
     }
 
+    // ✅ IMPORTANTE: Aplicar filtro de categoria ANTES de buscar do banco
     if (categoria_id) {
       console.log('🎯 Aplicando filtro: categoria_id =', categoria_id);
       query = query.eq('categoria_id', categoria_id);
@@ -134,25 +158,14 @@ export async function getAllProducts(req, res) {
 
     console.log(`✅ Query retornou ${products?.length || 0} produtos do banco`);
     
+    // ✅ VALIDAÇÃO: Se filtrou por categoria, TODOS devem ter essa categoria
     if (categoria_id && products && products.length > 0) {
-      // Verificar se todos os produtos pertencem à categoria solicitada
-      const correctCategory = products.filter(p => p.categoria_id === categoria_id).length;
-      const wrongCategory = products.filter(p => p.categoria_id !== categoria_id).length;
-      
-      console.log('📊 Análise dos produtos do banco:', {
-        total: products.length,
-        categoriaCorreta: correctCategory,
-        categoriaErrada: wrongCategory,
-        primeiros3: products.slice(0, 3).map(p => ({ 
-          name: p.name, 
-          categoria_id: p.categoria_id 
-        }))
-      });
-      
-      if (wrongCategory > 0) {
-        console.error('⚠️ ERRO: Banco retornou produtos de outras categorias!');
+      const allCorrectCategory = products.every(p => p.categoria_id === categoria_id);
+      if (!allCorrectCategory) {
+        console.error('❌ ERRO CRÍTICO: Banco retornou produtos de categorias diferentes!');
       }
     }
+    
 
     if (!products || products.length === 0) {
       console.log('📭 Nenhum produto encontrado');

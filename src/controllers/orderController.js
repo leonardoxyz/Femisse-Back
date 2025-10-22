@@ -1,53 +1,8 @@
 import supabase from '../services/supabaseClient.js';
-import {
-  cacheAddToSet,
-  cacheDelete,
-  cacheGet,
-  cacheGetSetMembers,
-  cacheSet,
-  cacheClearSet,
-} from '../services/cacheService.js';
-import { 
-  validateUUID, 
-  validatePositiveDecimal, 
-  validatePositiveInteger,
-  validateLimit,
-  sanitizeString,
-  secureLog, 
-  getErrorMessage 
-} from '../utils/securityUtils.js';
+import { validateUUID, validateLimit, secureLog, getErrorMessage } from '../utils/securityUtils.js';
 import { registerCouponUsage } from './couponController.js';
 import { toPublicOrderList } from '../dto/orderDTO.js';
-
-const ORDER_LIST_TTL = 120;
-const ORDER_DETAIL_TTL = 180;
-const USER_CACHE_SET_PREFIX = 'cache:orders:user:set:';
-
-const getUserOrdersSetKey = (userId) => `${USER_CACHE_SET_PREFIX}${userId}`;
-const getUserOrdersCacheKey = (userId, paramsHash) => `cache:orders:user:${userId}:${paramsHash}`;
-const getAdminOrdersCacheKey = (paramsHash) => `cache:orders:admin:${paramsHash}`;
-const getOrderDetailCacheKey = (orderId) => `cache:orders:detail:${orderId}`;
-
-const hashParams = (params) => JSON.stringify(params ?? {});
-
-const invalidateUserOrderCaches = async (userId) => {
-  const setKey = getUserOrdersSetKey(userId);
-  const keys = await cacheGetSetMembers(setKey);
-  if (keys.length > 0) {
-    await cacheDelete(keys);
-  }
-  await cacheClearSet(setKey);
-};
-
-const invalidateOrderDetailCache = async (orderId) => {
-  await cacheDelete(getOrderDetailCacheKey(orderId));
-};
-
-const calculateOrderTotals = (items, shippingCost = 0, discount = 0, couponDiscount = 0) => {
-  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-  const total = subtotal + shippingCost - discount - couponDiscount;
-  return { subtotal, total };
-};
+import * as orderService from '../services/orderService.js';
 
 const normalizeShippingPayload = (shipping) => ({
   shipping_name: shipping.name,
@@ -73,500 +28,380 @@ const mapOrderItemsPayload = (orderId, items) =>
     variant_color: item.variant_color ?? null,
   }));
 
-const fetchOrderWithItems = async (orderId) => {
-  const { data: order, error: orderError } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('id', orderId)
-    .single();
+export async function listOrders(req, res) {
+  try {
+    const limit = validateLimit(req.query.limit, 50);
+    const offset = parseInt(req.query.offset) || 0;
+    const status = req.query.status;
 
-  if (orderError) {
-    return { error: orderError };
+    let orders;
+    if (status) {
+      orders = await orderService.getOrdersByStatus(status, limit, offset);
+    } else {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      
+      if (error) throw error;
+      orders = data;
+    }
+
+    const formattedOrders = toPublicOrderList(orders);
+    secureLog('All orders listed:', { count: orders.length });
+    res.json({ success: true, data: formattedOrders });
+
+  } catch (error) {
+    secureLog('Error listing all orders:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao listar pedidos'));
   }
-
-  const { data: items, error: itemsError } = await supabase
-    .from('order_items')
-    .select('*')
-    .eq('order_id', orderId);
-
-  if (itemsError) {
-    return { error: itemsError };
-  }
-
-  return { data: { ...order, items: items ?? [] } };
-};
+}
 
 export async function listUserOrders(req, res) {
   try {
     const userId = req.user.id;
-    const { status, limit } = req.validatedQuery ?? {};
-    
-    // Valida limit
-    if (limit) {
-      const limitValidation = validateLimit(limit, 100);
-      if (!limitValidation.valid) {
-        return res.status(400).json({ 
-          error: 'Dados inválidos',
-          details: limitValidation.message
-        });
-      }
-    }
-    
-    // Valida status
-    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-    if (status && !validStatuses.includes(status)) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: 'Status inválido'
-      });
-    }
+    const limit = validateLimit(req.query.limit, 10);
+    const offset = parseInt(req.query.offset) || 0;
 
-    const paramsHash = hashParams({ status: status ?? null, limit: limit ?? null });
-    const cacheKey = getUserOrdersCacheKey(userId, paramsHash);
-    const cached = await cacheGet(cacheKey);
-    if (cached) {
-      return res.json({ success: true, data: cached });
-    }
-
-    let query = supabase
-      .from('orders')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (status) {
-      query = query.eq('status', status);
-    }
-    if (limit) {
-      query = query.limit(parseInt(limit));
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Erro ao listar pedidos do usuário:', error);
-      return res.status(500).json({ error: 'Erro ao listar pedidos', details: error.message });
-    }
-
-    const orders = data ?? [];
+    const orders = await orderService.getUserOrders(userId, limit, offset);
     const formattedOrders = toPublicOrderList(orders);
-    await cacheSet(cacheKey, formattedOrders, ORDER_LIST_TTL);
-    await cacheAddToSet(getUserOrdersSetKey(userId), cacheKey);
 
-    return res.json({ success: true, data: formattedOrders });
+    secureLog('Orders listed:', { userId, count: orders.length });
+    res.json({ success: true, data: formattedOrders });
+
   } catch (error) {
-    console.error('Erro inesperado ao listar pedidos do usuário:', error);
-    return res.status(500).json({ success: false, message: 'Erro interno ao listar pedidos', details: error.message });
-  }
-}
-
-export async function listOrders(req, res) {
-  try {
-    const { user_id: userIdFilter, status, payment_status: paymentStatus, limit } = req.validatedQuery ?? req.query;
-    const paramsHash = hashParams({ userIdFilter: userIdFilter ?? null, status: status ?? null, paymentStatus: paymentStatus ?? null, limit: limit ?? null });
-    const cacheKey = getAdminOrdersCacheKey(paramsHash);
-
-    const cached = await cacheGet(cacheKey);
-    if (cached) {
-      return res.json(cached);
-    }
-
-    let query = supabase
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (userIdFilter) {
-      query = query.eq('user_id', userIdFilter);
-    }
-    if (status) {
-      query = query.eq('status', status);
-    }
-    if (paymentStatus) {
-      query = query.eq('payment_status', paymentStatus);
-    }
-    if (limit) {
-      query = query.limit(Number(limit));
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      console.error('Erro ao listar pedidos:', error);
-      return res.status(500).json({ error: 'Erro ao listar pedidos', details: error.message });
-    }
-
-    const orders = data ?? [];
-    await cacheSet(cacheKey, orders, ORDER_LIST_TTL);
-
-    return res.json(orders);
-  } catch (error) {
-    console.error('Erro inesperado ao listar pedidos:', error);
-    return res.status(500).json({ error: 'Erro interno ao listar pedidos' });
+    secureLog('Error listing user orders:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao listar pedidos'));
   }
 }
 
 export async function getOrderById(req, res) {
   try {
-    const { id } = req.validatedParams ?? req.params;
-    const requesterId = req.user?.id;
-    
-    // Valida UUID
-    const uuidValidation = validateUUID(id);
-    if (!uuidValidation.valid) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: uuidValidation.message
-      });
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    const validation = validateUUID(id);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.message });
     }
 
-    const cacheKey = getOrderDetailCacheKey(id);
-    const cached = await cacheGet(cacheKey);
-    if (cached && (!requesterId || cached.user_id === requesterId)) {
-      return res.json(cached);
+    const { data: order, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error || !order) {
+      return res.status(404).json({ error: 'Pedido não encontrado' });
     }
 
-    const { data, error } = await fetchOrderWithItems(id);
-    if (error) {
-      if (error.code === 'PGRST116' || error.details?.includes('Results contains 0 rows')) {
-        return res.status(404).json({ error: 'Pedido não encontrado' });
-      }
-      console.error('Erro ao buscar pedido:', error);
-      return res.status(500).json({ error: 'Erro ao buscar pedido', details: error.message });
+    if (userId && order.user_id !== userId) {
+      return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    if (requesterId && data.user_id !== requesterId) {
-      return res.status(403).json({ error: 'Você não tem permissão para acessar este pedido' });
-    }
+    const items = await orderService.getOrderItems(id);
+    const formattedOrder = toPublicOrderList([{ ...order, items }])[0];
 
-    await cacheSet(cacheKey, data, ORDER_DETAIL_TTL);
-    return res.json(data);
+    secureLog('Order retrieved:', { orderId: id });
+    res.json({ success: true, data: formattedOrder });
+
   } catch (error) {
-    console.error('Erro inesperado ao buscar pedido:', error);
-    return res.status(500).json({ error: 'Erro interno ao buscar pedido' });
+    secureLog('Error getting order:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao buscar pedido'));
+  }
+}
+
+export async function getOrderDetail(req, res) {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+
+    const validation = validateUUID(orderId);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.message });
+    }
+
+    const order = await orderService.getOrderDetail(orderId, userId);
+    const items = await orderService.getOrderItems(orderId);
+
+    const formattedOrder = toPublicOrderList([{ ...order, items }])[0];
+
+    secureLog('Order detail retrieved:', { orderId, userId });
+    res.json({ success: true, data: formattedOrder });
+
+  } catch (error) {
+    secureLog('Error getting order detail:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao buscar pedido'));
   }
 }
 
 export async function createOrder(req, res) {
   try {
     const userId = req.user.id;
-    const payload = req.validatedBody ?? req.body;
-    
-    secureLog('CreateOrder payload received:', {
-      userId,
-      payment_method: payload.payment_method,
-      discount: payload.discount,
-      coupon_discount: payload.coupon_discount,
-      coupon_code: payload.coupon_code,
-      items: Array.isArray(payload.items) ? payload.items.length : 0
-    });
+    const { items, shipping, payment_method, coupon_code, coupon_id, subtotal, shipping_cost, discount, coupon_discount } = req.body;
 
-    secureLog('Creating order for user:', { userId });
-
-    // Validação de itens
-    const items = payload.items ?? [];
-    if (items.length === 0) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: 'Inclua pelo menos um item no pedido' 
-      });
-    }
-    
-    // Limite de 50 itens por pedido
-    if (items.length > 50) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: 'Máximo de 50 itens por pedido' 
-      });
-    }
-    
-    // Valida cada item
-    const errors = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      
-      // Valida product_id
-      const productIdValidation = validateUUID(item.product_id);
-      if (!productIdValidation.valid) {
-        errors.push({ field: `items[${i}].product_id`, message: 'ID do produto inválido' });
-      }
-      
-      // Valida quantity
-      const quantityValidation = validatePositiveInteger(item.quantity, 'Quantidade');
-      if (!quantityValidation.valid) {
-        errors.push({ field: `items[${i}].quantity`, message: quantityValidation.message });
-      } else if (quantityValidation.value > 100) {
-        errors.push({ field: `items[${i}].quantity`, message: 'Quantidade máxima é 100 por item' });
-      }
-      
-      // Valida unit_price
-      const priceValidation = validatePositiveDecimal(item.unit_price, 'Preço unitário');
-      if (!priceValidation.valid) {
-        errors.push({ field: `items[${i}].unit_price`, message: priceValidation.message });
-      } else if (priceValidation.value > 100000) {
-        errors.push({ field: `items[${i}].unit_price`, message: 'Preço unitário máximo é R$ 100.000' });
-      }
-      
-      // Sanitiza product_name
-      if (item.product_name) {
-        items[i].product_name = sanitizeString(item.product_name);
-      }
-    }
-    
-    if (errors.length > 0) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: errors
-      });
-    }
-    
-    // Valida shipping_cost
-    const shippingCostValidation = validatePositiveDecimal(payload.shipping_cost ?? 0, 'Custo de envio', true);
-    if (!shippingCostValidation.valid) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: shippingCostValidation.message
-      });
-    }
-    const shippingCost = shippingCostValidation.value;
-    
-    // Valida discount
-    const discountValidation = validatePositiveDecimal(payload.discount ?? 0, 'Desconto', true);
-    if (!discountValidation.valid) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: discountValidation.message
-      });
-    }
-    const discount = discountValidation.value;
-    
-    // Valida payment_method
-    const validPaymentMethods = ['credit_card', 'debit_card', 'pix', 'boleto'];
-    if (!payload.payment_method || !validPaymentMethods.includes(payload.payment_method)) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: 'Método de pagamento inválido'
-      });
-    }
-    
-    // Valida shipping (endereço de entrega)
-    if (!payload.shipping || typeof payload.shipping !== 'object') {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: 'Endereço de entrega é obrigatório'
-      });
-    }
-    
-    // Valida coupon_discount se fornecido
-    let couponDiscount = 0;
-    if (payload.coupon_discount !== undefined) {
-      const couponDiscountValidation = validatePositiveDecimal(payload.coupon_discount ?? 0, 'Desconto do cupom', true);
-      if (!couponDiscountValidation.valid) {
-        return res.status(400).json({ 
-          error: 'Dados inválidos',
-          details: couponDiscountValidation.message
-        });
-      }
-      couponDiscount = couponDiscountValidation.value;
+    if (!items?.length) {
+      return res.status(400).json({ error: 'Pedido deve conter itens' });
     }
 
-    const { subtotal, total } = calculateOrderTotals(items, shippingCost, discount, couponDiscount);
-    
-    // Valida total máximo (R$ 50.000)
-    if (total > 50000) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: 'Valor total do pedido excede o limite de R$ 50.000'
+    // payment_method é obrigatório: 'pix' | 'credit_card' | 'debit_card'
+    if (!payment_method) {
+      return res.status(400).json({ error: 'Método de pagamento é obrigatório' });
+    }
+
+    // Resolve itens com segurança no servidor (por ID ou slug)
+    const resolvedItems = [];
+    for (const [index, item] of items.entries()) {
+      let productId = item.product_id;
+      let productName = item.product_name;
+      let unitPrice = item.unit_price;
+
+      if (!productId) {
+        if (!item.product_slug) {
+          return res.status(400).json({ error: `Item ${index + 1}: produto é obrigatório (id ou slug)` });
+        }
+
+        // Busca por slug no banco e usa preço/nome oficiais
+        const { data: product, error: prodError } = await supabase
+          .from('products')
+          .select('id, name, price, images_urls')
+          .eq('slug', item.product_slug)
+          .single();
+
+        if (prodError || !product) {
+          return res.status(400).json({ error: `Item ${index + 1}: produto não encontrado pelo slug` });
+        }
+
+        productId = product.id;
+        productName = product.name;
+        unitPrice = Number(product.price);
+      } else {
+        // Mesmo com ID, por segurança revalida preço atual do banco
+        const { data: product, error: prodError } = await supabase
+          .from('products')
+          .select('id, name, price')
+          .eq('id', productId)
+          .single();
+        if (!prodError && product) {
+          productName = product.name;
+          unitPrice = Number(product.price);
+        }
+      }
+
+      resolvedItems.push({
+        product_id: productId,
+        product_name: productName,
+        product_image: item.product_image ?? null,
+        quantity: item.quantity,
+        unit_price: Number(unitPrice),
+        variant_size: item.variant_size ?? null,
+        variant_color: item.variant_color ?? null,
       });
     }
 
-    const { data: orderCode, error: orderCodeError } = await supabase.rpc('generate_order_number');
-    if (orderCodeError) {
-      console.error('Erro ao gerar número do pedido:', orderCodeError);
-      return res.status(500).json({ error: 'Erro ao gerar número do pedido', details: orderCodeError.message });
+    // Se veio apenas o código do cupom, tentar resolver o ID no banco
+    let resolvedCouponId = coupon_id ?? null;
+    if (!resolvedCouponId && coupon_code) {
+      const { data: couponRow } = await supabase
+        .from('coupons')
+        .select('id, code, active')
+        .eq('code', coupon_code)
+        .eq('active', true)
+        .single();
+      if (couponRow?.id) {
+        resolvedCouponId = couponRow.id;
+      }
     }
 
-    const baseOrder = {
-      user_id: userId,
-      order_number: Array.isArray(orderCode) ? orderCode[0]?.order_number ?? orderCode[0] : orderCode,
-      status: 'pending',
-      payment_status: payload.payment_status ?? 'pending',
-      payment_method: payload.payment_method,
-      subtotal,
-      shipping_cost: shippingCost,
+    // Calcula totais no servidor com base nos preços oficiais
+    const { subtotal: calculatedSubtotal, total } = orderService.calculateOrderTotals(
+      resolvedItems,
+      shipping_cost,
       discount,
+      coupon_discount
+    );
+
+    const orderData = {
+      user_id: userId,
+      status: 'pending',
+      payment_status: 'pending',
+      payment_method,
+      subtotal: calculatedSubtotal,
+      shipping_cost: shipping_cost || 0,
+      discount: discount || 0,
+      coupon_discount: coupon_discount || 0,
+      coupon_id: resolvedCouponId,
+      coupon_code: coupon_code || null,
       total,
-      notes: payload.notes ? sanitizeString(payload.notes.substring(0, 500)) : null, // Limita a 500 caracteres
-      // Cupom de desconto (se aplicado)
-      coupon_id: payload.coupon_id ?? null,
-      coupon_code: payload.coupon_code ? sanitizeString(payload.coupon_code) : null,
-      coupon_discount: couponDiscount,
-      // Informações de frete do MelhorEnvio
-      shipping_service_id: payload.shipping_service_id ?? null,
-      shipping_service_name: payload.shipping_service_name ? sanitizeString(payload.shipping_service_name) : null,
-      shipping_company_id: payload.shipping_company_id ?? null,
-      shipping_company_name: payload.shipping_company_name ? sanitizeString(payload.shipping_company_name) : null,
-      shipping_delivery_time: payload.shipping_delivery_time ?? null,
-      shipping_quote_id: payload.shipping_quote_id ?? null,
-      ...normalizeShippingPayload(payload.shipping),
+      ...normalizeShippingPayload(shipping),
+      created_at: new Date().toISOString(),
     };
 
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert([baseOrder])
-      .select('*')
-      .single();
+    const order = await orderService.createOrder(orderData);
 
-    if (orderError) {
-      console.error('Erro ao criar pedido:', orderError);
-      return res.status(500).json({ error: 'Erro ao criar pedido', details: orderError.message });
+    const orderItems = mapOrderItemsPayload(order.id, resolvedItems);
+    await orderService.createOrderItems(orderItems);
+
+    if (coupon_code) {
+      await registerCouponUsage(userId, coupon_code, order.id);
     }
 
-    const itemsPayload = mapOrderItemsPayload(order.id, items);
-    const { error: itemsError } = await supabase.from('order_items').insert(itemsPayload);
+    secureLog('Order created:', { orderId: order.id, userId });
+    res.status(201).json({ success: true, data: order });
 
-    if (itemsError) {
-      console.error('Erro ao inserir itens do pedido:', itemsError);
-      await supabase.from('orders').delete().eq('id', order.id);
-      return res.status(500).json({ error: 'Erro ao salvar itens do pedido', details: itemsError.message });
-    }
-
-    const response = { ...order, items: itemsPayload };
-
-    // Registrar uso de cupom se aplicado
-    if (payload.coupon_id && couponDiscount > 0) {
-      await registerCouponUsage(payload.coupon_id, userId, order.id, couponDiscount);
-    }
-
-    await invalidateUserOrderCaches(userId);
-    await cacheSet(getOrderDetailCacheKey(order.id), response, ORDER_DETAIL_TTL);
-
-    return res.status(201).json(response);
   } catch (error) {
-    console.error('Erro inesperado ao criar pedido:', error);
-    return res.status(500).json({ error: 'Erro interno ao criar pedido' });
+    secureLog('Error creating order:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao criar pedido'));
   }
 }
 
 export async function updateOrder(req, res) {
   try {
-    const { id } = req.validatedParams ?? req.params;
-    const payload = req.validatedBody ?? req.body;
-    
-    // Valida UUID
-    const uuidValidation = validateUUID(id);
-    if (!uuidValidation.valid) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: uuidValidation.message
-      });
-    }
-    
-    // Valida status se fornecido
-    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-    if (payload.status && !validStatuses.includes(payload.status)) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: 'Status inválido'
-      });
-    }
-    
-    // Valida payment_status se fornecido
-    const validPaymentStatuses = ['pending', 'paid', 'failed', 'refunded'];
-    if (payload.payment_status && !validPaymentStatuses.includes(payload.payment_status)) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: 'Status de pagamento inválido'
-      });
-    }
+    const { id } = req.params;
+    const updates = req.body;
+    const userId = req.user?.id;
 
-    const updates = { ...payload };
-
-    if (payload.status === 'delivered') {
-      updates.completed_at = new Date().toISOString();
-    }
-
-    if (payload.status === 'cancelled') {
-      updates.cancelled_at = new Date().toISOString();
+    const validation = validateUUID(id);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.message });
     }
 
     const { data: order, error } = await supabase
       .from('orders')
-      .update(updates)
-      .eq('id', id)
       .select('*')
+      .eq('id', id)
       .single();
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Pedido não encontrado' });
-      }
-      console.error('Erro ao atualizar pedido:', error);
-      return res.status(500).json({ error: 'Erro ao atualizar pedido', details: error.message });
+    if (error || !order) {
+      return res.status(404).json({ error: 'Pedido não encontrado' });
     }
 
-    await invalidateOrderDetailCache(id);
-    await invalidateUserOrderCaches(order.user_id);
+    if (userId && order.user_id !== userId) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
 
-    return res.json(order);
+    updates.updated_at = new Date().toISOString();
+    const updatedOrder = await orderService.updateOrder(id, updates);
+
+    secureLog('Order updated:', { orderId: id });
+    res.json({ success: true, data: updatedOrder });
+
   } catch (error) {
-    console.error('Erro inesperado ao atualizar pedido:', error);
-    return res.status(500).json({ error: 'Erro interno ao atualizar pedido' });
+    secureLog('Error updating order:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao atualizar pedido'));
+  }
+}
+
+export async function updateOrderStatus(req, res) {
+  try {
+    const { orderId } = req.params;
+    const { status, payment_status } = req.body;
+    const userId = req.user.id;
+
+    const validation = validateUUID(orderId);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.message });
+    }
+
+    const order = await orderService.getOrderDetail(orderId, userId);
+
+    const updates = {};
+    if (status) updates.status = status;
+    if (payment_status) updates.payment_status = payment_status;
+    updates.updated_at = new Date().toISOString();
+
+    const updatedOrder = await orderService.updateOrder(orderId, updates);
+
+    secureLog('Order status updated:', { orderId, status, payment_status });
+    res.json({ success: true, data: updatedOrder });
+
+  } catch (error) {
+    secureLog('Error updating order status:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao atualizar pedido'));
   }
 }
 
 export async function deleteOrder(req, res) {
   try {
-    const { id } = req.validatedParams ?? req.params;
-    
-    // Valida UUID
-    const uuidValidation = validateUUID(id);
-    if (!uuidValidation.valid) {
-      return res.status(400).json({ 
-        error: 'Dados inválidos',
-        details: uuidValidation.message
-      });
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    const validation = validateUUID(id);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.message });
     }
 
-    const { data: order, error: fetchError } = await supabase
+    const { data: order, error } = await supabase
       .from('orders')
-      .select('id, user_id')
+      .select('*')
       .eq('id', id)
       .single();
 
-    if (fetchError) {
-      if (fetchError.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Pedido não encontrado' });
-      }
-      console.error('Erro ao localizar pedido para exclusão:', fetchError);
-      return res.status(500).json({ error: 'Erro ao excluir pedido', details: fetchError.message });
+    if (error || !order) {
+      return res.status(404).json({ error: 'Pedido não encontrado' });
     }
 
-    const { error: deleteItemsError } = await supabase
-      .from('order_items')
-      .delete()
-      .eq('order_id', id);
-
-    if (deleteItemsError) {
-      console.error('Erro ao deletar itens do pedido:', deleteItemsError);
-      return res.status(500).json({ error: 'Erro ao deletar itens do pedido', details: deleteItemsError.message });
+    if (userId && order.user_id !== userId) {
+      return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    const { error: deleteOrderError } = await supabase
-      .from('orders')
-      .delete()
-      .eq('id', id);
+    await supabase.from('order_items').delete().eq('order_id', id);
+    await supabase.from('orders').delete().eq('id', id);
 
-    if (deleteOrderError) {
-      console.error('Erro ao deletar pedido:', deleteOrderError);
-      return res.status(500).json({ error: 'Erro ao deletar pedido', details: deleteOrderError.message });
+    if (userId) {
+      await orderService.invalidateUserOrderCaches(userId);
     }
 
-    await invalidateOrderDetailCache(id);
-    await invalidateUserOrderCaches(order.user_id);
+    secureLog('Order deleted:', { orderId: id });
+    res.json({ success: true, message: 'Pedido deletado com sucesso' });
 
-    return res.json({ message: 'Pedido deletado com sucesso' });
   } catch (error) {
-    console.error('Erro inesperado ao deletar pedido:', error);
-    return res.status(500).json({ error: 'Erro interno ao deletar pedido' });
+    secureLog('Error deleting order:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao deletar pedido'));
   }
 }
+
+export async function cancelOrder(req, res) {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+
+    const validation = validateUUID(orderId);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.message });
+    }
+
+    const order = await orderService.getOrderDetail(orderId, userId);
+
+    if (order.status === 'cancelled') {
+      return res.status(400).json({ error: 'Pedido já foi cancelado' });
+    }
+
+    const updatedOrder = await orderService.updateOrder(orderId, {
+      status: 'cancelled',
+      updated_at: new Date().toISOString(),
+    });
+
+    await orderService.invalidateUserOrderCaches(userId);
+
+    secureLog('Order cancelled:', { orderId, userId });
+    res.json({ success: true, data: updatedOrder });
+
+  } catch (error) {
+    secureLog('Error cancelling order:', { error: error.message });
+    res.status(500).json(getErrorMessage(error, 'Erro ao cancelar pedido'));
+  }
+}
+
+export default {
+  listOrders,
+  listUserOrders,
+  getOrderById,
+  getOrderDetail,
+  createOrder,
+  updateOrder,
+  updateOrderStatus,
+  deleteOrder,
+  cancelOrder,
+};

@@ -1,8 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-
-dotenv.config();
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+import supabase from '../services/supabaseClient.js';
 
 export async function getFavorites(req, res) {
   try {

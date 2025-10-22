@@ -16,7 +16,7 @@ export const SUPABASE_URL = process.env.SUPABASE_URL;
 export const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
 // Configurações de autenticação
-export const JWT_SECRET = process.env.JWT_SECRET || 'segredo_dev';
+export const JWT_SECRET = process.env.JWT_SECRET;
 
 // Configurações de CORS baseadas no ambiente
 export const CORS_ORIGINS = isDevelopment 
@@ -30,9 +30,12 @@ export const CORS_ORIGINS = isDevelopment
       'https://femisse.com',
     ];
 
-// Adiciona sempre domínios .vercel.app em produção
+// Adiciona domínios específicos em produção
 if (isProduction) {
-  CORS_ORIGINS.push('*.vercel.app');
+  CORS_ORIGINS.push(
+    'https://femisse-front.vercel.app',
+    'https://femisse-back.vercel.app'
+  );
 }
 
 // Log das configurações (sem dados sensíveis)

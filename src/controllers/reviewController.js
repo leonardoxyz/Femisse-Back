@@ -24,71 +24,30 @@ const getUserReviewsCacheKey = (userId) => `cache:reviews:user:${userId}`;
 const getReviewableProductsCacheKey = (userId) => `cache:reviews:reviewable:${userId}`;
 const getProductStatsCacheKey = (productId) => `cache:reviews:stats:${productId}`;
 
-const normalizeImageRefs = (value) => {
-  if (!value) return [];
-
-  if (Array.isArray(value)) {
-    return value.filter(Boolean).map(String);
+const resolvePrimaryImage = (imageUrls) => {
+  if (!imageUrls) return null;
+  
+  if (Array.isArray(imageUrls)) {
+    return imageUrls.length > 0 ? imageUrls[0] : null;
   }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return [];
-
+  
+  if (typeof imageUrls === 'string') {
+    const trimmed = imageUrls.trim();
+    if (!trimmed) return null;
+    
     try {
       const parsed = JSON.parse(trimmed);
       if (Array.isArray(parsed)) {
-        return parsed.filter(Boolean).map(String);
+        return parsed.length > 0 ? parsed[0] : null;
       }
     } catch (err) {
-      // ignore JSON parse error – attempt to parse legacy Postgres array format {id1,id2}
     }
-
-    return trimmed
-      .replace(/["{}]/g, '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
+    
+    return trimmed;
   }
-
-  return [];
-};
-
-const fetchImagesByIds = async (ids) => {
-  if (!ids || ids.size === 0) return new Map();
-
-  const { data, error } = await supabase
-    .from('images')
-    .select('id, image_url')
-    .in('id', Array.from(ids));
-
-  if (error) {
-    console.error('Erro ao buscar imagens:', error);
-    return new Map();
-  }
-
-  return new Map((data ?? []).map((image) => [image.id, image.image_url]));
-};
-
-const resolvePrimaryImage = (imageRef, imageMap) => {
-  const refs = normalizeImageRefs(imageRef);
-  for (const ref of refs) {
-    const url = imageMap.get(ref);
-    if (url) return url;
-  }
+  
   return null;
 };
-
-const formatReviewResponse = (review, imageMap) => ({
-  reviewId: review.id,
-  productId: review.product_id,
-  rating: review.rating,
-  comment: review.comment,
-  productName: review.product_name,
-  productImage: resolvePrimaryImage(review.product_image, imageMap),
-  createdAt: review.created_at,
-  updatedAt: review.updated_at ?? null,
-});
 
 const invalidateUserReviewCaches = async (userId) => {
   await cacheDelete([
@@ -99,22 +58,6 @@ const invalidateUserReviewCaches = async (userId) => {
 
 const invalidateProductStatsCache = async (productId) => {
   await cacheDelete(getProductStatsCacheKey(productId));
-};
-
-const fetchDetailedReviewById = async (reviewId) => {
-  const { data, error } = await supabase
-    .from('product_reviews_detailed')
-    .select('*')
-    .eq('id', reviewId)
-    .single();
-
-  if (error) {
-    return { error };
-  }
-
-  const imageIds = new Set(normalizeImageRefs(data.product_image));
-  const imageMap = await fetchImagesByIds(imageIds);
-  return { data: formatReviewResponse(data, imageMap) };
 };
 
 export async function listUserReviews(req, res) {
@@ -138,7 +81,7 @@ export async function listUserReviews(req, res) {
         comment,
         created_at,
         updated_at,
-        products!inner(name, image_ids)
+        products!inner(name, images_urls)
       `)
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
@@ -149,20 +92,12 @@ export async function listUserReviews(req, res) {
     }
 
     const reviews = data ?? [];
-    const allImageIds = new Set();
-    reviews.forEach((review) => {
-      if (review.products?.image_ids) {
-        normalizeImageRefs(review.products.image_ids).forEach((id) => allImageIds.add(id));
-      }
-    });
-
-    const imageMap = await fetchImagesByIds(allImageIds);
     const rawReviews = reviews.map((review) => ({
       reviewId: review.id,
       rating: review.rating,
       comment: review.comment,
       productName: review.products?.name ?? null,
-      productImage: review.products?.image_ids ? resolvePrimaryImage(review.products.image_ids, imageMap) : null,
+      productImage: review.products?.images_urls ? resolvePrimaryImage(review.products.images_urls) : null,
       createdAt: review.created_at,
       updatedAt: review.updated_at ?? null,
     }));
@@ -258,17 +193,11 @@ export async function listReviewableProducts(req, res) {
     });
 
     const products = Array.from(uniqueProducts.values());
-    const imageIds = new Set();
-    products.forEach((product) => {
-      normalizeImageRefs(product.product_image).forEach((id) => imageIds.add(id));
-    });
-
-    const imageMap = await fetchImagesByIds(imageIds);
     const rawProducts = products.map((product) => ({
       productId: product.product_id,
       orderId: product.order_id,
       name: product.product_name,
-      image: resolvePrimaryImage(product.product_image, imageMap),
+      image: resolvePrimaryImage(product.product_image),
       orderDate: product.order_date,
       hasReview: product.has_review,
     }));

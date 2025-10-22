@@ -34,15 +34,27 @@ export const paymentStatusEnum = z.enum([
   'refunded',
 ]);
 
-export const orderItemSchema = z.object({
-  product_id: z.string({ required_error: 'product_id é obrigatório' }).uuid('product_id inválido'),
-  product_name: requiredString('Nome do produto', 255),
-  product_image: optionalString('Imagem do produto', 500),
-  quantity: z.coerce.number().int().positive('Quantidade deve ser maior que zero'),
-  unit_price: moneySchema,
-  variant_size: optionalString('Tamanho', 50),
-  variant_color: optionalString('Cor', 50),
-});
+export const orderItemSchema = z
+  .object({
+    // Agora product_id é opcional; aceita string genérica (UUID validado no controller)
+    product_id: z.string().trim().min(1).optional(),
+    // product_slug como alternativa segura
+    product_slug: z
+      .string()
+      .trim()
+      .min(1, 'product_slug é obrigatório quando não houver product_id')
+      .optional(),
+    product_name: requiredString('Nome do produto', 255),
+    product_image: optionalString('Imagem do produto', 500),
+    quantity: z.coerce.number().int().positive('Quantidade deve ser maior que zero'),
+    unit_price: moneySchema,
+    variant_size: optionalString('Tamanho', 50),
+    variant_color: optionalString('Cor', 50),
+  })
+  .refine((item) => !!item.product_id || !!item.product_slug, {
+    message: 'Informe product_id (UUID) ou product_slug',
+    path: ['product_id'],
+  });
 
 const shippingSchema = z.object({
   name: requiredString('Nome do destinatário', 150),

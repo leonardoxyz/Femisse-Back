@@ -12,7 +12,7 @@ import { productCreateSchema, productUpdateSchema } from '../validators/productS
 
 const router = express.Router();
 
-router.get('/', validateRequest(productsQuerySchema), getAllProducts);
+router.get('/', validateRequest(productsQuerySchema, 'query'), getAllProducts);
 router.get('/:id', getProductById);
 router.post('/', validateRequest(productCreateSchema), createProduct);
 router.put('/:id', validateRequest(productUpdateSchema), updateProduct);

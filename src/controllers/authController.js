@@ -1,9 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import supabase from '../services/supabaseClient.js';
 import bcrypt from 'bcryptjs';
 import validator from 'validator';
 import { validateTurnstileToken } from '../utils/turnstile.js';
 import { logger, logSecurity } from '../utils/logger.js';
-import { env } from '../config/validateEnv.js';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -17,70 +16,24 @@ import {
   UnauthorizedError,
   ConflictError,
 } from '../middleware/errorHandler.js';
+import {
+  sanitizeString,
+  validatePassword,
+  validateEmail,
+  validateCPF,
+  validatePhone,
+  validateBirthDate,
+} from '../utils/authValidation.js';
 
-const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_KEY);
-
-/**
- * Sanitiza string removendo caracteres perigosos
- */
-const sanitizeString = (str) => {
-  if (typeof str !== 'string') return str;
-  return validator.escape(str.trim());
-};
-
-/**
- * Validação de senha forte
- */
-const validatePassword = (senha) => {
-  if (!senha || senha.length < 8) {
-    throw new ValidationError('Senha deve ter pelo menos 8 caracteres');
-  }
-  if (!/[A-Z]/.test(senha)) {
-    throw new ValidationError('Senha deve conter pelo menos uma letra maiúscula');
-  }
-  if (!/[a-z]/.test(senha)) {
-    throw new ValidationError('Senha deve conter pelo menos uma letra minúscula');
-  }
-  if (!/[0-9]/.test(senha)) {
-    throw new ValidationError('Senha deve conter pelo menos um número');
-  }
-  return true;
-};
-
-/**
- * Validação de CPF
- */
-const validateCPF = (cpf) => {
-  if (!cpf) return true;
-  const cleanCPF = cpf.replace(/\D/g, '');
-  if (cleanCPF.length !== 11) return false;
-  if (/^(\d)\1{10}$/.test(cleanCPF)) return false;
-  return true;
-};
-
-/**
- * Validação de telefone
- */
-const validatePhone = (telefone) => {
-  if (!telefone) return true;
-  const cleanPhone = telefone.replace(/\D/g, '');
-  return cleanPhone.length >= 10 && cleanPhone.length <= 11;
-};
-
-/**
- * Registro de novo usuário
- */
 export const register = asyncHandler(async (req, res) => {
   logger.info({ ip: req.ip }, 'Tentativa de registro');
 
   let { nome, data_nascimento, cpf, telefone, email, senha, turnstileToken } = req.body;
 
-  // 1. Validação de campos obrigatórios
   if (!nome || !email || !senha) {
     throw new ValidationError('Nome, email e senha são obrigatórios');
   }
 
-  // 2. Validação do Turnstile (CAPTCHA)
   if (!turnstileToken) {
     throw new ValidationError('Complete a verificação de segurança');
   }
@@ -93,249 +46,152 @@ export const register = asyncHandler(async (req, res) => {
     throw new ValidationError(turnstileValidation.error || 'Verificação de segurança inválida');
   }
 
-  // 3. Sanitização de inputs
   nome = sanitizeString(nome);
   email = sanitizeString(email);
-
-  // 4. Validação de email
-  if (!validator.isEmail(email)) {
-    throw new ValidationError('Email inválido');
-  }
-
+  validateEmail(email);
   email = validator.normalizeEmail(email);
-
-  // 5. Validação de senha forte
   validatePassword(senha);
 
-  // 6. Validação de CPF (se fornecido)
-  if (cpf && !validateCPF(cpf)) {
-    throw new ValidationError('CPF inválido');
-  }
+  if (cpf) validateCPF(cpf);
+  if (telefone) validatePhone(telefone);
+  if (data_nascimento) validateBirthDate(data_nascimento);
 
-  // 7. Validação de telefone (se fornecido)
-  if (telefone && !validatePhone(telefone)) {
-    throw new ValidationError('Telefone inválido');
-  }
-
-  // 8. Validação de data de nascimento (se fornecida)
-  if (data_nascimento && !validator.isDate(data_nascimento)) {
-    throw new ValidationError('Data de nascimento inválida');
-  }
-
-  // 9. Hash da senha (bcrypt com salt rounds 12)
   const senha_hash = await bcrypt.hash(senha, 12);
 
-  // 10. Preparação dos dados
   const userData = {
     nome,
     email,
     senha_hash,
+    data_nascimento: data_nascimento || null,
+    cpf: cpf ? cpf.replace(/\D/g, '') : null,
+    telefone: telefone ? telefone.replace(/\D/g, '') : null,
   };
 
-  if (data_nascimento) userData.data_nascimento = data_nascimento;
-  if (cpf) userData.cpf = cpf.replace(/\D/g, '');
-  if (telefone) userData.telefone = telefone.replace(/\D/g, '');
-
-  // 11. Inserção no banco
   const { data, error } = await supabase
     .from('usuarios')
     .insert([userData])
-    .select('id, nome, email, data_nascimento, cpf, telefone')
+    .select('id, nome, email')
     .single();
 
   if (error) {
-    logger.error({ err: error }, 'Erro ao inserir usuário');
-
     if (error.code === '23505' || error.message.includes('duplicate')) {
-      throw new ConflictError('E-mail ou CPF já cadastrado');
+      throw new ConflictError('Email já cadastrado');
     }
-
-    throw new Error('Não foi possível completar o registro');
+    throw error;
   }
 
-  logger.info({ userId: data.id }, 'Usuário registrado com sucesso');
-  logSecurity('user_registered', { userId: data.id, email: data.email });
-
-  // 12. Resposta (não retorna senha_hash)
-  res.status(201).json({
-    usuario: {
-      id: data.id,
-      nome: data.nome,
-      email: data.email,
-      data_nascimento: data.data_nascimento,
-      cpf: data.cpf,
-      telefone: data.telefone,
-    },
-    message: 'Usuário registrado com sucesso',
-  });
+  logSecurity('user_registered', { userId: data.id, email });
+  res.status(201).json({ success: true, message: 'Usuário registrado com sucesso' });
 });
 
-/**
- * Login de usuário
- */
 export const login = asyncHandler(async (req, res) => {
   logger.info({ ip: req.ip }, 'Tentativa de login');
 
-  let { email, senha, rememberMe } = req.body;
+  const { email, senha } = req.body;
 
-  // 1. Validação de campos obrigatórios
   if (!email || !senha) {
     throw new ValidationError('Email e senha são obrigatórios');
   }
 
-  // 2. Sanitização e validação de email
-  email = sanitizeString(email);
-
-  if (!validator.isEmail(email)) {
-    throw new ValidationError('Email inválido');
-  }
-
-  email = validator.normalizeEmail(email);
-
-  // 3. Validação básica de senha
-  if (senha.length < 6) {
-    throw new ValidationError('Senha deve ter pelo menos 6 caracteres');
-  }
-
-  // 4. Busca usuário
-  const { data: usuarios, error } = await supabase
+  const { data: user, error } = await supabase
     .from('usuarios')
-    .select('id, nome, email, senha_hash')
+    .select('*')
     .eq('email', email)
-    .limit(1);
+    .single();
 
-  if (error) {
-    logger.error({ err: error }, 'Erro ao buscar usuário');
-    throw new Error('Não foi possível completar o login');
+  if (error || !user) {
+    logSecurity('login_failed_user_not_found', { email });
+    throw new UnauthorizedError('Email ou senha incorretos');
   }
 
-  // 5. Validação de credenciais
-  if (!usuarios || usuarios.length === 0) {
-    logSecurity('login_failed_user_not_found', { email, ip: req.ip });
-    // Delay artificial para dificultar timing attacks
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    throw new UnauthorizedError('E-mail ou senha inválidos');
+  const senhaValida = await bcrypt.compare(senha, user.senha_hash);
+
+  if (!senhaValida) {
+    logSecurity('login_failed_wrong_password', { userId: user.id });
+    throw new UnauthorizedError('Email ou senha incorretos');
   }
 
-  const usuario = usuarios[0];
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
 
-  // 6. Verificação de senha
-  const senhaOk = await bcrypt.compare(senha, usuario.senha_hash);
+  await saveRefreshToken(user.id, refreshToken);
+  setAuthCookies(res, accessToken, refreshToken);
 
-  if (!senhaOk) {
-    logSecurity('login_failed_invalid_password', { userId: usuario.id, ip: req.ip });
-    // Delay artificial para dificultar timing attacks
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    throw new UnauthorizedError('E-mail ou senha inválidos');
-  }
+  logSecurity('user_logged_in', { userId: user.id });
 
-  // 7. Geração de tokens
-  const payload = {
-    id: usuario.id,
-    email: usuario.email,
-    nome: usuario.nome,
-  };
-
-  const accessToken = generateAccessToken(payload);
-  const refreshToken = generateRefreshToken(payload, rememberMe);
-
-  // 8. Salva refresh token no banco
-  await saveRefreshToken(usuario.id, refreshToken, rememberMe);
-
-  // 9. Define cookies httpOnly
-  setAuthCookies(res, accessToken, refreshToken, rememberMe);
-
-  logger.info({ 
-    userId: usuario.id,
-    userAgent: req.headers['user-agent'],
-    origin: req.headers.origin,
-    isMobile: /mobile/i.test(req.headers['user-agent'] || '')
-  }, 'Login bem-sucedido - cookies definidos');
-  logSecurity('user_logged_in', { userId: usuario.id });
-
-  // 10. Resposta (não retorna senha_hash)
-  // Token já está nos cookies httpOnly (mais seguro)
-  // ✅ MOBILE FIX: Também retorna tokens no body para compatibilidade mobile
   res.json({
-    usuario: {
-      id: usuario.id,
-      nome: usuario.nome,
-      email: usuario.email,
-    },
+    success: true,
     message: 'Login realizado com sucesso',
-    // Tokens para fallback mobile (quando cookies são bloqueados)
     accessToken,
     refreshToken,
+    user: { id: user.id, nome: user.nome, email: user.email }
   });
 });
 
-/**
- * Logout de usuário
- */
 export const logout = asyncHandler(async (req, res) => {
-  const refreshToken = req.cookies.refreshToken;
+  const userId = req.user?.id;
 
-  if (refreshToken) {
-    // Revoga refresh token
-    const { revokeRefreshToken } = await import('../utils/tokenManager.js');
-    await revokeRefreshToken(refreshToken);
+  if (userId) {
+    await supabase
+      .from('refresh_tokens')
+      .delete()
+      .eq('user_id', userId);
+
+    logSecurity('user_logged_out', { userId });
   }
 
-  // Limpa cookies
   clearAuthCookies(res);
-
-  logger.info({ userId: req.user?.id }, 'Logout realizado');
-
-  res.json({ message: 'Logout realizado com sucesso' });
+  res.json({ success: true, message: 'Logout realizado com sucesso' });
 });
 
-/**
- * Refresh token
- */
 export const refreshToken = asyncHandler(async (req, res) => {
-  const refreshToken = req.cookies.refreshToken;
+  const { refreshToken: token } = req.body;
 
-  if (!refreshToken) {
-    throw new UnauthorizedError('Refresh token não fornecido');
+  if (!token) {
+    throw new ValidationError('Refresh token é obrigatório');
   }
 
-  // Verifica refresh token
-  const { verifyRefreshToken, validateRefreshToken } = await import('../utils/tokenManager.js');
+  const { data: tokenData, error } = await supabase
+    .from('refresh_tokens')
+    .select('*')
+    .eq('token', token)
+    .single();
 
-  let decoded;
-  try {
-    decoded = verifyRefreshToken(refreshToken);
-  } catch (error) {
+  if (error || !tokenData) {
     throw new UnauthorizedError('Refresh token inválido');
   }
 
-  // Valida se token existe no banco e não foi revogado
-  const tokenData = await validateRefreshToken(refreshToken);
+  const { data: user } = await supabase
+    .from('usuarios')
+    .select('*')
+    .eq('id', tokenData.user_id)
+    .single();
 
-  if (!tokenData) {
-    throw new UnauthorizedError('Refresh token inválido ou revogado');
+  if (!user) {
+    throw new UnauthorizedError('Usuário não encontrado');
   }
 
-  // Gera novo access token
-  const payload = {
-    id: decoded.id,
-    email: decoded.email,
-    nome: decoded.nome,
-  };
+  const newAccessToken = generateAccessToken(user);
+  const newRefreshToken = generateRefreshToken(user);
 
-  const newAccessToken = generateAccessToken(payload);
+  await supabase
+    .from('refresh_tokens')
+    .delete()
+    .eq('token', token);
 
-  // Define novo cookie
-  const isProduction = env.NODE_ENV === 'production';
-  res.cookie('accessToken', newAccessToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: 'strict',
-    maxAge: 15 * 60 * 1000, // 15 minutos
-    path: '/',
+  await saveRefreshToken(user.id, newRefreshToken);
+  setAuthCookies(res, newAccessToken, newRefreshToken);
+
+  res.json({
+    success: true,
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken
   });
-
-  logger.info({ userId: decoded.id }, 'Token renovado');
-
-  res.json({ message: 'Token renovado com sucesso' });
 });
+
+export default {
+  register,
+  login,
+  logout,
+  refreshToken,
+};

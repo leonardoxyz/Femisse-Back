@@ -1,106 +1,33 @@
-import { createClient } from '@supabase/supabase-js';
-import axios from 'axios';
+import supabase from '../services/supabaseClient.js';
 import { secureLog } from '../utils/securityUtils.js';
+import * as mercadoPagoService from '../services/mercadoPagoService.js';
+import * as paymentProcessingService from '../services/paymentProcessingService.js';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
-// Configuração do Mercado Pago
-const MP_ACCESS_TOKEN = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-const MP_PUBLIC_KEY = process.env.MERCADO_PAGO_PUBLIC_KEY;
-const MP_WEBHOOK_SECRET = process.env.MERCADO_PAGO_WEBHOOK_SECRET;
-
-if (!MP_ACCESS_TOKEN || !MP_PUBLIC_KEY) {
-  throw new Error('Credenciais do Mercado Pago não configuradas');
-}
-
-const mercadoPagoAPI = axios.create({
-  baseURL: 'https://api.mercadopago.com',
-  headers: {
-    'Authorization': `Bearer ${MP_ACCESS_TOKEN}`,
-    'Content-Type': 'application/json',
-    'X-Idempotency-Key': () => `feminisse-${Date.now()}-${Math.random()}`
-  },
-  timeout: 30000 // 30 segundos
-});
-
-// Criar preferência de pagamento (checkout transparente)
 export async function createPaymentPreference(req, res) {
   try {
     const paymentData = req.validatedPayment;
     const order = req.orderData;
     const userId = req.user.id;
 
-    secureLog('Creating payment preference:', { 
-      order_id: order.id, 
-      userId,
-      payment_method: paymentData.payment_method 
-    });
+    secureLog('Creating payment preference:', { order_id: order.id, userId });
 
-    // PROTEÇÃO: Verificar se já existe pagamento aprovado para este pedido
-    const { data: existingPayment } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('order_id', order.id)
-      .eq('status', 'approved')
-      .single();
-
+    const existingPayment = await paymentProcessingService.checkExistingApprovedPayment(order.id);
     if (existingPayment) {
       return res.status(400).json({ 
         error: 'Pagamento já processado',
-        message: 'Este pedido já possui um pagamento aprovado. Não é possível pagar novamente.',
+        message: 'Este pedido já possui um pagamento aprovado.',
         payment_id: existingPayment.mp_payment_id
       });
     }
 
-    // Buscar itens do pedido
-    const { data: orderItems, error: itemsError } = await supabase
-      .from('order_items')
-      .select('*')
-      .eq('order_id', order.id);
-
-    if (itemsError || !orderItems?.length) {
-      return res.status(400).json({ 
-        error: 'Itens do pedido não encontrados',
-        details: itemsError?.message 
-      });
-    }
-
+    const orderItems = await paymentProcessingService.getOrderItems(order.id);
     const shippingCost = Number(order.shipping_cost ?? 0);
     const rawSubtotal = orderItems.reduce((sum, item) => sum + (Number(item.unit_price) * item.quantity), 0);
-    const orderSubtotal = Number(order.subtotal ?? rawSubtotal);
-    const orderTotal = Number(order.total ?? (orderSubtotal + shippingCost));
-    const discount = Number(order.discount ?? 0);
-    const couponDiscount = Number(order.coupon_discount ?? 0);
-    const totalDiscount = Number((discount + couponDiscount).toFixed(2));
+    const orderTotal = Number(order.total ?? (Number(order.subtotal ?? rawSubtotal) + shippingCost));
     const discountedSubtotal = Math.max(0, Number((orderTotal - shippingCost).toFixed(2)));
 
-    let adjustedItems = orderItems.map(item => ({ ...item }));
-    if (rawSubtotal > 0) {
-      const factor = discountedSubtotal > 0 ? discountedSubtotal / rawSubtotal : 0;
-      let runningTotal = 0;
-      adjustedItems = orderItems.map(item => {
-        const adjustedUnit = Number((Number(item.unit_price) * factor).toFixed(2));
-        runningTotal += adjustedUnit * item.quantity;
-        return {
-          ...item,
-          unit_price: adjustedUnit
-        };
-      });
+    const adjustedItems = paymentProcessingService.calculateAdjustedItems(orderItems, discountedSubtotal, rawSubtotal);
 
-      let diff = Number((discountedSubtotal - runningTotal).toFixed(2));
-      if (adjustedItems.length > 0 && Math.abs(diff) >= 0.01) {
-        const lastIndex = adjustedItems.length - 1;
-        const lastItem = adjustedItems[lastIndex];
-        const perUnitAdjustment = Number((diff / lastItem.quantity).toFixed(2));
-        const adjustedUnitPrice = Math.max(0, Number((lastItem.unit_price + perUnitAdjustment).toFixed(2)));
-        adjustedItems[lastIndex] = {
-          ...lastItem,
-          unit_price: adjustedUnitPrice
-        };
-      }
-    }
-
-    // Preparar dados para o Mercado Pago
     const preferenceData = {
       items: adjustedItems.map(item => ({
         id: item.product_id,
@@ -109,23 +36,17 @@ export async function createPaymentPreference(req, res) {
         unit_price: Number(item.unit_price.toFixed(2)),
         currency_id: 'BRL'
       })),
-      
       payer: {
         name: paymentData.payer.first_name,
         surname: paymentData.payer.last_name,
         email: paymentData.payer.email,
-        identification: paymentData.payer.identification ? {
-          type: paymentData.payer.identification.type,
-          number: paymentData.payer.identification.number
-        } : undefined
+        identification: paymentData.payer.identification
       },
-
       payment_methods: {
         excluded_payment_methods: [],
         excluded_payment_types: [],
         installments: paymentData.installments || 12
       },
-
       shipments: paymentData.shipping_address ? {
         cost: order.shipping_cost || 0,
         mode: 'not_specified',
@@ -137,142 +58,75 @@ export async function createPaymentPreference(req, res) {
           state_name: paymentData.shipping_address.state
         }
       } : undefined,
-
       back_urls: {
         success: `${process.env.FRONTEND_URL}/checkout/success`,
         failure: `${process.env.FRONTEND_URL}/checkout/failure`,
         pending: `${process.env.FRONTEND_URL}/checkout/pending`
       },
-
       auto_return: 'approved',
-      
       notification_url: `${process.env.BACKEND_URL}/api/payments/webhook`,
-      
       external_reference: order.id,
-      
       metadata: {
         user_id: userId,
         order_id: order.id,
         order_number: order.order_number,
         platform: 'feminisse-ecommerce'
       },
-
       expires: true,
       expiration_date_from: new Date().toISOString(),
-      expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 minutos
+      expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString()
     };
 
-    // Criar preferência no Mercado Pago
-    const response = await mercadoPagoAPI.post('/checkout/preferences', preferenceData);
-    
-    if (response.status !== 201) {
-      throw new Error(`Mercado Pago API error: ${response.status}`);
-    }
+    const preference = await mercadoPagoService.createPreference(preferenceData);
 
-    const preference = response.data;
-
-    // Salvar dados do pagamento no banco
-    const { error: paymentError } = await supabase
-      .from('payments')
-      .insert({
-        order_id: order.id,
-        user_id: userId,
-        preference_id: preference.id,
-        payment_method: paymentData.payment_method,
-        amount: orderTotal,
-        status: 'pending',
-        mp_preference_data: preference,
-        created_at: new Date().toISOString()
-      });
-
-    if (paymentError) {
-      console.error('Error saving payment data:', paymentError);
-      // Não falha a operação, apenas loga o erro
-    }
-
-    secureLog('Payment preference created successfully:', { 
-      order_id: order.id, 
-      userId,
-      preference_id: preference.id 
+    await paymentProcessingService.savePaymentData({
+      order_id: order.id,
+      user_id: userId,
+      preference_id: preference.id,
+      payment_method: paymentData.payment_method,
+      amount: orderTotal,
+      status: 'pending',
+      mp_preference_data: preference,
+      created_at: new Date().toISOString()
     });
+
+    secureLog('Payment preference created:', { order_id: order.id, preference_id: preference.id });
 
     res.status(201).json({
       preference_id: preference.id,
       init_point: preference.init_point,
       sandbox_init_point: preference.sandbox_init_point,
-      public_key: MP_PUBLIC_KEY,
+      public_key: mercadoPagoService.getPublicKey(),
       expires_at: preference.expiration_date_to
     });
 
   } catch (error) {
-    console.error('Error creating payment preference:', error);
-    
-    secureLog('Payment preference creation failed:', { 
-      order_id: req.orderData?.id, 
-      userId: req.user?.id,
-      error: error.message 
-    });
-
-    if (error.response?.data) {
-      return res.status(400).json({
-        error: 'Erro ao processar pagamento',
-        details: 'Dados de pagamento inválidos'
-      });
-    }
-
-    res.status(500).json({ 
-      error: 'Erro interno ao processar pagamento',
-      details: 'Tente novamente em alguns instantes'
+    secureLog('Payment preference creation failed:', { error: error.message });
+    res.status(error.response?.status || 500).json({ 
+      error: 'Erro ao processar pagamento',
+      details: error.message 
     });
   }
 }
 
-// Processar pagamento direto (para PIX e cartão)
 export async function processDirectPayment(req, res) {
   try {
     const paymentData = req.validatedPayment;
     const order = req.orderData;
     const userId = req.user.id;
 
-    secureLog('Processing direct payment:', { 
-      order_id: order.id, 
-      userId,
-      payment_method: paymentData.payment_method,
-      order_subtotal: order.subtotal,
-      order_discount: order.discount,
-      order_coupon_discount: order.coupon_discount,
-      order_total: order.total,
-      payment_amount: paymentData.total_amount
-    });
+    secureLog('Processing direct payment:', { order_id: order.id, userId });
 
-    // PROTEÇÃO: Verificar se já existe pagamento aprovado para este pedido
-    const { data: existingPayment } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('order_id', order.id)
-      .eq('status', 'approved')
-      .single();
-
+    const existingPayment = await paymentProcessingService.checkExistingApprovedPayment(order.id);
     if (existingPayment) {
       return res.status(400).json({ 
         error: 'Pagamento já processado',
-        message: 'Este pedido já possui um pagamento aprovado. Não é possível pagar novamente.',
+        message: 'Este pedido já possui um pagamento aprovado.',
         payment_id: existingPayment.mp_payment_id
       });
     }
 
-    // Calcular desconto total (discount + coupon_discount)
     const totalDiscount = (parseFloat(order.discount) || 0) + (parseFloat(order.coupon_discount) || 0);
-    
-    console.log('=== PAYMENT PAYLOAD DEBUG ===');
-    console.log('Order Subtotal:', order.subtotal);
-    console.log('Order Discount:', order.discount);
-    console.log('Order Coupon Discount:', order.coupon_discount);
-    console.log('Order Total:', order.total);
-    console.log('Payment Amount:', paymentData.total_amount);
-    console.log('Total Discount:', totalDiscount);
-    console.log('============================');
-    
     const pricing = req.orderPricing ?? {
       subtotal: parseFloat(order.subtotal) || 0,
       shippingCost: parseFloat(order.shipping_cost) || 0,
@@ -301,106 +155,41 @@ export async function processDirectPayment(req, res) {
         discount: pricing.discount,
         coupon_discount: pricing.couponDiscount,
         coupon_code: order.coupon_code || null
-      }
+      },
+      notification_url: process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/api/payments/webhook` : undefined
     };
 
-    // Adicionar notification_url apenas se estiver configurada e for válida
-    const backendUrl = process.env.BACKEND_URL;
-    if (backendUrl && backendUrl.startsWith('http')) {
-      paymentPayload.notification_url = `${backendUrl}/api/payments/webhook`;
-    }
-
-    // Para cartão: usar token e especificar tipo (débito ou crédito)
     if (paymentData.card_token && paymentData.payment_method !== 'pix') {
       paymentPayload.token = paymentData.card_token;
       paymentPayload.installments = paymentData.installments || 1;
-      
-      // IMPORTANTE: Especificar se é débito ou crédito
-      // O MP precisa saber o tipo mesmo com token
-      if (paymentData.payment_method === 'debit_card') {
-        paymentPayload.payment_method_id = 'debit_card';
-      } else if (paymentData.payment_method === 'credit_card') {
-        paymentPayload.payment_method_id = 'credit_card';
-      }
+      paymentPayload.payment_method_id = paymentData.payment_method === 'debit_card' ? 'debit_card' : 'credit_card';
     } else {
-      // Para PIX: enviar payment_method_id
       paymentPayload.payment_method_id = paymentData.payment_method;
     }
 
-    // NOTA: Não enviamos coupon_amount/coupon_code para o Mercado Pago
-    // O desconto já está aplicado no transaction_amount (pricing.total)
-    // O MP não suporta cupons customizados em pagamentos diretos (PIX/cartão)
+    const payment = await mercadoPagoService.processPayment(paymentPayload, order.id);
 
-    // Gerar idempotency key única para evitar duplicação
-    const idempotencyKey = `${order.id}-${Date.now()}`;
-    
-    // Processar pagamento no Mercado Pago
-    const response = await mercadoPagoAPI.post('/v1/payments', paymentPayload, {
-      headers: {
-        'X-Idempotency-Key': idempotencyKey
-      }
-    });
-    
-    // Aceitar tanto 200 (OK) quanto 201 (Created)
-    if (response.status !== 200 && response.status !== 201) {
-      throw new Error(`Mercado Pago API error: ${response.status}`);
-    }
-
-    const payment = response.data;
-
-    // Salvar dados do pagamento no banco
-    const { error: paymentError } = await supabase
-      .from('payments')
-      .insert({
-        order_id: order.id,
-        user_id: userId,
-        mp_payment_id: payment.id,
-        payment_method: paymentData.payment_method,
-        amount: pricing.total,
-        status: payment.status,
-        mp_payment_data: payment,
-        created_at: new Date().toISOString()
-      });
-
-    if (paymentError) {
-      console.error('Error saving payment data:', paymentError);
-    }
-
-    // Atualizar status do pedido baseado no pagamento
-    let orderStatus = 'pending';
-    let paymentStatus = payment.status;
-
-    if (payment.status === 'approved') {
-      orderStatus = 'processing';
-      paymentStatus = 'paid';
-    } else if (payment.status === 'rejected') {
-      paymentStatus = 'failed';
-    }
-
-    await supabase
-      .from('orders')
-      .update({ 
-        status: orderStatus,
-        payment_status: paymentStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', order.id);
-
-    secureLog('Direct payment processed:', { 
-      order_id: order.id, 
-      userId,
-      payment_id: payment.id,
-      status: payment.status 
+    await paymentProcessingService.savePaymentData({
+      order_id: order.id,
+      user_id: userId,
+      mp_payment_id: payment.id,
+      payment_method: paymentData.payment_method,
+      amount: pricing.total,
+      status: payment.status,
+      mp_payment_data: payment,
+      created_at: new Date().toISOString()
     });
 
-    // Resposta baseada no tipo de pagamento
+    await paymentProcessingService.updateOrderStatus(order.id, payment.status);
+
+    secureLog('Direct payment processed:', { order_id: order.id, payment_id: payment.id });
+
     const responseData = {
       payment_id: payment.id,
       status: payment.status,
       status_detail: payment.status_detail
     };
 
-    // Para PIX, incluir dados do QR Code
     if (paymentData.payment_method === 'pix' && payment.point_of_interaction?.transaction_data) {
       responseData.pix = {
         qr_code: payment.point_of_interaction.transaction_data.qr_code,
@@ -412,52 +201,23 @@ export async function processDirectPayment(req, res) {
     res.status(201).json(responseData);
 
   } catch (error) {
-    console.error('Error processing direct payment:', error);
-    console.error('Error details:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
-    });
-    
-    secureLog('Direct payment processing failed:', { 
-      order_id: req.orderData?.id, 
-      userId: req.user?.id,
-      error: error.message,
-      mpError: error.response?.data
-    });
-
-    if (error.response?.data) {
-      const mpError = error.response.data;
-      return res.status(400).json({
-        error: 'Pagamento rejeitado',
-        details: mpError.message || mpError.error || 'Verifique os dados do pagamento',
-        mpDetails: mpError // Incluir detalhes do MP em desenvolvimento
-      });
-    }
-
-    res.status(500).json({ 
-      error: 'Erro interno ao processar pagamento',
-      details: error.message || 'Tente novamente em alguns instantes'
+    secureLog('Direct payment processing failed:', { error: error.message });
+    res.status(error.response?.status || 500).json({ 
+      error: 'Pagamento rejeitado',
+      details: error.message 
     });
   }
 }
 
-// Webhook do Mercado Pago
 export async function handleWebhook(req, res) {
   try {
-    const { type, data, action } = req.body;
+    const { type, data } = req.body;
 
-    secureLog('Webhook received:', { type, action, data_id: data?.id });
+    secureLog('Webhook received:', { type, data_id: data?.id });
 
-    // Verificar assinatura do webhook (se configurada)
-    if (MP_WEBHOOK_SECRET) {
-      const signature = req.headers['x-signature'];
-      // Implementar verificação de assinatura aqui se necessário
-    }
-
-    // Processar apenas notificações de pagamento
     if (type === 'payment' && data?.id) {
-      await processPaymentNotification(data.id);
+      const payment = await mercadoPagoService.getPaymentData(data.id);
+      await paymentProcessingService.processPaymentNotification(payment);
     }
 
     res.status(200).json({ received: true });
@@ -468,94 +228,19 @@ export async function handleWebhook(req, res) {
   }
 }
 
-// Processar notificação de pagamento
-async function processPaymentNotification(paymentId) {
-  try {
-    // Buscar dados do pagamento no Mercado Pago
-    const response = await mercadoPagoAPI.get(`/v1/payments/${paymentId}`);
-    const payment = response.data;
-
-    secureLog('Processing payment notification:', { 
-      payment_id: paymentId, 
-      status: payment.status,
-      external_reference: payment.external_reference 
-    });
-
-    // Atualizar dados do pagamento no banco
-    const { error: updateError } = await supabase
-      .from('payments')
-      .update({
-        status: payment.status,
-        mp_payment_data: payment,
-        updated_at: new Date().toISOString()
-      })
-      .eq('mp_payment_id', paymentId);
-
-    if (updateError) {
-      console.error('Error updating payment:', updateError);
-      return;
-    }
-
-    // Atualizar status do pedido
-    if (payment.external_reference) {
-      let orderStatus = 'pending';
-      let paymentStatus = payment.status;
-
-      if (payment.status === 'approved') {
-        orderStatus = 'processing';
-        paymentStatus = 'paid';
-      } else if (payment.status === 'rejected') {
-        paymentStatus = 'failed';
-      } else if (payment.status === 'cancelled') {
-        paymentStatus = 'cancelled';
-        orderStatus = 'cancelled';
-      }
-
-      await supabase
-        .from('orders')
-        .update({ 
-          status: orderStatus,
-          payment_status: paymentStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', payment.external_reference);
-
-      secureLog('Order status updated:', { 
-        order_id: payment.external_reference,
-        payment_status: paymentStatus,
-        order_status: orderStatus 
-      });
-    }
-
-  } catch (error) {
-    console.error('Error processing payment notification:', error);
-  }
-}
-
-// Consultar status de pagamento
 export async function getPaymentStatus(req, res) {
   try {
     const { payment_id } = req.params;
     const userId = req.user.id;
 
-    // Validar se o pagamento pertence ao usuário
-    const { data: payment, error } = await supabase
-      .from('payments')
-      .select('*')
-      .eq('mp_payment_id', payment_id)
-      .eq('user_id', userId)
-      .single();
-
-    if (error || !payment) {
+    const payment = await paymentProcessingService.getUserPayment(payment_id, userId);
+    if (!payment) {
       return res.status(404).json({ error: 'Pagamento não encontrado' });
     }
 
-    // Buscar dados atualizados no Mercado Pago
     try {
-      const response = await mercadoPagoAPI.get(`/v1/payments/${payment_id}`);
-      const mpPayment = response.data;
+      const mpPayment = await mercadoPagoService.getPaymentData(payment_id);
 
-      // Atualizar dados no banco se necessário
       if (mpPayment.status !== payment.status) {
         await supabase
           .from('payments')
@@ -577,7 +262,6 @@ export async function getPaymentStatus(req, res) {
       });
 
     } catch (mpError) {
-      // Se falhar ao consultar MP, retorna dados do banco
       res.json({
         payment_id: payment.mp_payment_id,
         status: payment.status,
