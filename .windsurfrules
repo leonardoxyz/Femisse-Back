@@ -1,3 +1,193 @@
-- You must analyze all project to provide your answer.
-- You must focus on best performance and HIGH level of security.
-- You must use the best practices of software development.
+## 🧠 **Regras Gerais de Comportamento da IA**
+
+1. **Análise de Codebase:**
+   Sempre no início da conversa, a IA deve propor uma **análise completa da codebase**, incluindo dependências, estrutura de pastas, design patterns e padrões de commit existentes, antes de iniciar qualquer implementação.
+
+2. **Contexto de Projeto:**
+   A IA deve compreender se está atuando em ambiente **DEV, STAGING ou PROD**, adaptando os comandos e boas práticas a cada contexto.
+
+3. **Comunicação Técnica:**
+   Todas as explicações e logs devem ser objetivos, em **inglês técnico** e com foco em **ação e resultado** (sem mensagens genéricas).
+
+4. **Linguagem e Frameworks:**
+   O backend usa **Node.js**, **Express**, **TypeScript** e **Prisma** (ou ORM equivalente). A IA deve assumir esse stack como padrão salvo instrução contrária.
+
+---
+
+## ⚙️ **Regras de Execução e Ambientes**
+
+5. **Porta Padrão:**
+   Sempre tente executar a aplicação na porta **localhost:4000**.
+
+   * Se a porta estiver ocupada, execute o seguinte comando PowerShell para liberá-la:
+
+     ```powershell
+     Get-Process -Id (Get-NetTCPConnection -LocalPort 4000).OwningProcess | Stop-Process -Force
+     ```
+   * Em seguida, tente novamente iniciar o servidor.
+
+6. **Encerramento de Processos:**
+
+   * A IA só pode encerrar **processos vinculados à porta 4000**.
+   * Nunca deve matar processos genéricos do sistema.
+
+7. **Builds e Commits:**
+
+   * Antes de qualquer commit, garanta que o comando `npm run build` ou `tsc --noEmit` seja executado **sem erros**.
+   * **Nunca** faça commit automaticamente após cada modificação — somente quando o usuário solicitar explicitamente.
+
+8. **Logs de Commit:**
+
+   * As mensagens de commit devem ser **curtas, descritivas e em inglês**, no formato convencional:
+
+     ```
+     feat: add new endpoint for product filtering
+     fix: correct null reference in order service
+     refactor: optimize cart total calculation
+     ```
+
+9. **Arquivos Ignorados:**
+
+   * Sempre ignore arquivos de log (`server.log`, `combined.log`, `npm-debug.log`) e diretórios temporários no commit.
+
+---
+
+## 🧱 **Boas Práticas de Arquitetura e Código**
+
+10. **Princípios SOLID:**
+    Todo o código deve obedecer rigorosamente aos princípios **SOLID**, evitando acoplamento excessivo e promovendo a responsabilidade única.
+
+11. **Evitar Duplicação:**
+    Nunca gerar código duplicado. Se detectar duplicidade, sugerir refatoração imediata com **reutilização de serviços, middlewares ou utilitários** existentes.
+
+12. **Design Patterns Recomendados:**
+
+    * Use **Repository Pattern** para acesso a dados.
+    * Use **Service Layer Pattern** para regras de negócio.
+    * Use **Dependency Injection** sempre que possível.
+    * Prefira **Factory**, **Strategy**, **Adapter** ou **Observer** conforme a necessidade.
+
+13. **Tratamento de Erros:**
+
+    * Nunca use `try/catch` sem tratamento concreto.
+    * Logar apenas não é tratamento — implemente **retry**, **fallback**, ou **propagação controlada** do erro.
+    * Todos os erros devem ser capturados por um **middleware global de erro**.
+
+14. **Logs e Observabilidade:**
+
+    * Não utilizar `console.log`, `console.error` ou `console.warn`.
+    * Utilize um sistema de logging estruturado (ex: **Winston**, **Pino**, ou **Bunyan**) com níveis (`info`, `warn`, `error`, `debug`).
+
+15. **Performance e Otimização:**
+
+    * Use consultas otimizadas (ex: `select` e `include` específicos no Prisma).
+    * Evite loops desnecessários e operações síncronas bloqueantes.
+    * Prefira sempre operações **assíncronas** e **lazy loading** quando aplicável.
+
+---
+
+## 🛡️ **Segurança**
+
+16. **Validação e Sanitização:**
+
+    * Sempre validar e sanitizar dados de entrada antes de processar requisições.
+    * Use bibliotecas como `zod`, `joi`, ou `class-validator`.
+
+17. **Proteção contra Injeções:**
+
+    * Nunca construir queries SQL manualmente.
+    * Sempre usar ORM seguro com **bindings parametrizados**.
+
+18. **Headers e CORS:**
+
+    * Assegurar que as rotas tenham configuração adequada de CORS, com origens permitidas explícitas.
+    * Nunca utilizar `Access-Control-Allow-Origin: *` em produção.
+
+19. **Autenticação e Autorização:**
+
+    * Use JWT com expiração curta e refresh tokens.
+    * Nunca exponha tokens, senhas ou segredos no código-fonte.
+    * Proteja endpoints sensíveis com middlewares de role checking.
+
+20. **Rate Limiting e Proteção Anti-DDOS:**
+
+    * Adicione proteção básica com `express-rate-limit`.
+    * Implemente cache (Redis, por exemplo) para requisições intensivas.
+
+---
+
+## 📜 **Documentação e Qualidade**
+
+21. **Swagger / OpenAPI:**
+
+    * Toda vez que criar ou modificar um endpoint, adicione ou atualize a documentação Swagger com **JSDoc e a tag `@swagger`**.
+    * Reinicie o servidor e confirme a atualização em `/swagger`.
+    * Falta de documentação = tarefa incompleta.
+
+22. **Testes Automatizados:**
+
+    * Cada implementação deve incluir **testes unitários** e **de integração**.
+    * Os testes devem rodar com `npm test` sem falhas antes de qualquer commit.
+    * Use `jest` ou `vitest`, com cobertura mínima de 80%.
+
+23. **Lint e Formatação:**
+
+    * Execute `npm run lint` antes do commit.
+    * O código deve seguir o padrão **ESLint + Prettier**, sem warnings ou erros.
+
+24. **Comentários e Legibilidade:**
+
+    * Comentários devem ser técnicos e objetivos.
+    * Nenhum código deve conter comentários redundantes ou deixados como “TODO” indefinidamente.
+
+25. **Nomenclaturas:**
+
+    * Usar nomes consistentes e descritivos (ex: `userService`, `productRepository`).
+    * Nunca use abreviações confusas ou genéricas (`data`, `tmp`, `val`).
+
+---
+
+## 🧰 **Manutenção e Automação**
+
+26. **Scripts do NPM:**
+
+    * Padronize scripts: `start`, `dev`, `build`, `test`, `lint`, `seed`, `swagger:update`.
+    * Nunca criar scripts duplicados ou com nomes ambíguos.
+
+27. **Env Files:**
+
+    * Variáveis sensíveis devem estar em `.env` e nunca versionadas.
+    * A IA deve sempre checar a existência de `.env.example` atualizado.
+
+28. **CI/CD:**
+
+    * Garanta que o pipeline de build/test passe antes de sugerir merge.
+    * Automatize verificações de lint, test e build no pipeline.
+
+29. **Migrações e Banco de Dados:**
+
+    * Toda alteração de schema deve ter migração correspondente (`prisma migrate dev`).
+    * Nunca editar o banco manualmente.
+
+30. **Versionamento de API:**
+
+    * Sempre versionar rotas REST (`/api/v1/...`).
+    * Ao criar endpoints novos, mantenha compatibilidade retroativa.
+
+---
+
+## 🧩 **Comportamentos Proibidos**
+
+31. ❌ Nunca:
+
+* Usar `any` sem justificativa.
+* Usar variáveis globais para persistência.
+* Alterar código de terceiros diretamente (exceto configuração explícita).
+* Fazer push ou commit automático.
+* Usar dependências obsoletas sem validação de segurança.
+
+32. ✅ Sempre:
+
+* Refatorar o código duplicado.
+* Validar logs e erros antes de commit.
+* Garantir que o código seja **performático, seguro e limpo**.

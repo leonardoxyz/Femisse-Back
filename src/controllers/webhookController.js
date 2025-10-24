@@ -7,8 +7,9 @@
 
 import supabase from '../services/supabaseClient.js';
 import melhorEnvioService from '../services/melhorEnvioService.js';
-import { secureLog } from '../utils/securityUtils.js';
+import { sanitizeString } from '../utils/securityUtils.js';
 
+import { logger } from '../utils/logger.js';
 /**
  * Processa webhook do MelhorEnvio
  * POST /api/webhooks/melhorenvio
@@ -18,15 +19,15 @@ export async function handleMelhorEnvioWebhook(req, res) {
     const signature = req.headers['x-me-signature'];
     const payload = req.body;
     
-    secureLog('MelhorEnvio webhook received', {
+    logger.info({
       event: payload.event,
       orderId: payload.data?.id,
       hasSignature: !!signature
-    });
+    }, 'MelhorEnvio webhook received');
     
     // Valida assinatura do webhook
     if (!signature) {
-      console.warn('Webhook sem assinatura recebido');
+      logger.warn('Webhook sem assinatura recebido');
       return res.status(401).json({ 
         error: 'Assinatura do webhook não fornecida' 
       });
@@ -35,7 +36,7 @@ export async function handleMelhorEnvioWebhook(req, res) {
     const isValid = melhorEnvioService.validateWebhookSignature(payload, signature);
     
     if (!isValid) {
-      console.warn('Webhook com assinatura inválida');
+      logger.warn('Webhook com assinatura inválida');
       return res.status(401).json({ 
         error: 'Assinatura do webhook inválida' 
       });
@@ -58,7 +59,7 @@ export async function handleMelhorEnvioWebhook(req, res) {
       .single();
     
     if (labelError || !label) {
-      console.warn('Etiqueta não encontrada para webhook:', data.id);
+      logger.warn({ data: data.id }, 'Etiqueta não encontrada para webhook');
       
       // Registra evento mesmo sem etiqueta encontrada
       await supabase.from('shipping_events').insert([{
@@ -99,7 +100,7 @@ export async function handleMelhorEnvioWebhook(req, res) {
       .single();
     
     if (eventError) {
-      console.error('Erro ao registrar evento:', eventError);
+      logger.error({ err: eventError }, 'Erro ao registrar evento');
       return res.status(500).json({ 
         error: 'Erro ao registrar evento' 
       });
@@ -109,7 +110,7 @@ export async function handleMelhorEnvioWebhook(req, res) {
     const updateResult = await processWebhookEvent(label, event, data, eventRecord.id);
     
     if (!updateResult.success) {
-      console.error('Erro ao processar evento:', updateResult.error);
+      logger.error({ err: updateResult.error }, 'Erro ao processar evento');
       
       // Marca evento como erro
       await supabase
@@ -135,11 +136,11 @@ export async function handleMelhorEnvioWebhook(req, res) {
       })
       .eq('id', eventRecord.id);
     
-    secureLog('MelhorEnvio webhook processed successfully', {
+    logger.info({
       event,
       labelId: label.id,
       orderId: label.order_id
-    });
+    }, 'MelhorEnvio webhook processed successfully');
     
     // Retorna 200 para confirmar recebimento
     return res.status(200).json({ 
@@ -147,7 +148,7 @@ export async function handleMelhorEnvioWebhook(req, res) {
       processed: true
     });
   } catch (error) {
-    console.error('Erro ao processar webhook:', error);
+    logger.error({ err: error }, 'Erro ao processar webhook');
     
     // Retorna 200 para não retentar em caso de erro interno
     return res.status(200).json({ 
@@ -261,7 +262,7 @@ async function processWebhookEvent(label, eventType, eventData, eventId) {
     
     return { success: true };
   } catch (error) {
-    console.error('Erro ao processar evento:', error);
+    logger.error({ err: error }, 'Erro ao processar evento');
     
     // Log do erro
     await supabase.from('melhorenvio_logs').insert([{
@@ -382,7 +383,7 @@ export async function testWebhook(req, res) {
       event: eventRecord
     });
   } catch (error) {
-    console.error('Erro ao testar webhook:', error);
+    logger.error({ err: error }, 'Erro ao testar webhook');
     return res.status(500).json({ 
       error: 'Erro ao testar webhook',
       details: error.message

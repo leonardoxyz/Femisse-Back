@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 
+import { logger } from '../utils/logger.js';
 // Carrega variáveis de ambiente
 dotenv.config();
 
@@ -39,7 +40,7 @@ if (isProduction) {
 }
 
 // Log das configurações (sem dados sensíveis)
-console.log('🚀 Environment Configuration:', {
+logger.info({
   NODE_ENV,
   isDevelopment,
   isProduction,
@@ -47,7 +48,7 @@ console.log('🚀 Environment Configuration:', {
   hasSupabaseUrl: !!SUPABASE_URL,
   hasSupabaseKey: !!SUPABASE_KEY,
   corsOrigins: CORS_ORIGINS
-});
+}, 'Environment Configuration');
 
 export default {
   NODE_ENV,

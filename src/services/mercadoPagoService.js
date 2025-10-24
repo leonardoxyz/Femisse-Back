@@ -1,14 +1,14 @@
 import axios from 'axios';
 import { env } from '../config/validateEnv.js';
-import { secureLog } from '../utils/securityUtils.js';
-
+import { getErrorMessage } from '../utils/securityUtils.js';
+import { logger } from '../utils/logger.js';
 const MP_ACCESS_TOKEN = env.MERCADO_PAGO_ACCESS_TOKEN;
 const MP_PUBLIC_KEY = env.MERCADO_PAGO_PUBLIC_KEY;
 
 const MP_CONFIGURED = !!(MP_ACCESS_TOKEN && MP_PUBLIC_KEY);
 
 if (!MP_CONFIGURED) {
-  console.warn('⚠️ Mercado Pago não configurado - funcionalidades de pagamento desabilitadas');
+  logger.warn('⚠️ Mercado Pago não configurado - funcionalidades de pagamento desabilitadas');
 }
 
 const mercadoPagoAPI = axios.create({
@@ -37,7 +37,7 @@ export async function createPreference(preferenceData) {
 
     return response.data;
   } catch (error) {
-    secureLog('Mercado Pago preference creation failed:', { error: error.message });
+    logger.info({ error: error.message }, 'Mercado Pago preference creation failed:');
     throw error;
   }
 }
@@ -65,11 +65,11 @@ export async function processPayment(paymentPayload, orderId) {
 
     return response.data;
   } catch (error) {
-    secureLog('Mercado Pago payment processing failed:', { 
+    logger.info({ 
       orderId, 
       error: error.message,
       mpError: error.response?.data 
-    });
+    }, 'Mercado Pago payment processing failed:');
     throw error;
   }
 }
@@ -86,7 +86,7 @@ export async function getPaymentData(paymentId) {
     const response = await mercadoPagoAPI.get(`/v1/payments/${paymentId}`);
     return response.data;
   } catch (error) {
-    secureLog('Mercado Pago payment fetch failed:', { paymentId, error: error.message });
+    logger.info({ paymentId, error: error.message }, 'Mercado Pago payment fetch failed:');
     throw error;
   }
 }

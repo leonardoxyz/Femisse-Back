@@ -3,6 +3,24 @@ import pino from 'pino';
 const isDevelopment = process.env.NODE_ENV === 'development';
 const isProduction = process.env.NODE_ENV === 'production';
 
+const SENSITIVE_FIELDS = [
+  'password',
+  'senha',
+  'senha_hash',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'authorization',
+  'cookie',
+  'cpf',
+  'credit_card',
+  'card_number',
+  'cvv',
+  'secret',
+  'api_key',
+  'private_key',
+];
+
 /**
  * Logger estruturado com Pino
  * - Desenvolvimento: Pretty print
@@ -24,14 +42,11 @@ export const logger = pino({
   // Configurações de produção
   ...(isProduction && {
     redact: {
-      paths: [
+      paths: SENSITIVE_FIELDS.map(f => `*.${f}`).concat([
         'req.headers.authorization',
         'req.headers.cookie',
         'res.headers["set-cookie"]',
-        '*.password',
-        '*.token',
-        '*.senha',
-      ],
+      ]),
       remove: true,
     },
   }),
@@ -109,12 +124,51 @@ export const logSecurity = (event, details = {}) => {
  * Helper para logar performance
  */
 export const logPerformance = (operation, duration, metadata = {}) => {
-  logger.info({
+  const level = duration > 1000 ? 'warn' : 'info';
+  logger[level]({
     type: 'performance',
     operation,
     duration: `${duration}ms`,
     ...metadata,
   }, `Performance: ${operation}`);
 };
+
+/**
+ * Helper para logar auditoria
+ */
+export const logAudit = (action, userId, data = {}) => {
+  logger.info({
+    type: 'audit',
+    action,
+    userId,
+    timestamp: new Date().toISOString(),
+    ...data,
+  }, `Audit: ${action}`);
+};
+
+/**
+ * Utilitário para medir performance de funções
+ */
+export async function measurePerformance(operation, fn) {
+  const startTime = Date.now();
+  
+  try {
+    const result = await fn();
+    const duration = Date.now() - startTime;
+    
+    logPerformance(operation, duration, { success: true });
+    
+    return result;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    
+    logPerformance(operation, duration, { 
+      success: false,
+      error: error.message 
+    });
+    
+    throw error;
+  }
+}
 
 export default logger;

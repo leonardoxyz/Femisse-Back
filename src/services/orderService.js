@@ -7,7 +7,7 @@ import {
   cacheSet,
   cacheClearSet,
 } from './cacheService.js';
-import { secureLog } from '../utils/securityUtils.js';
+import { logger } from '../utils/logger.js';
 
 const ORDER_LIST_TTL = 120;
 const ORDER_DETAIL_TTL = 180;

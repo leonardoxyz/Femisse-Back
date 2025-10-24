@@ -12,8 +12,8 @@
 
 import axios from 'axios';
 import supabase from './supabaseClient.js';
-import { secureLog, getErrorMessage } from '../utils/securityUtils.js';
-
+import { getErrorMessage } from '../utils/securityUtils.js';
+import { logger } from '../utils/logger.js';
 // URLs da API (Produção e Sandbox)
 const MELHORENVIO_API_URL = process.env.MELHORENVIO_SANDBOX === 'true' 
   ? 'https://sandbox.melhorenvio.com.br/api/v2'
@@ -68,7 +68,7 @@ const logOperation = async (operationType, status, data = {}) => {
       user_agent: data.userAgent || null
     }]);
   } catch (error) {
-    console.error('Erro ao registrar log MelhorEnvio:', error);
+    logger.error({ err: error }, 'Erro ao registrar log MelhorEnvio');
   }
 };
 
@@ -323,7 +323,7 @@ export const calculateShipping = async (userId, shippingData) => {
       .select();
 
     if (saveError) {
-      console.error('Erro ao salvar cotações:', saveError);
+      logger.error({ err: saveError }, 'Erro ao salvar cotações');
     }
 
     await logOperation('calculate_shipping', 'success', {

@@ -1,12 +1,13 @@
 import Redis from 'ioredis';
 import dotenv from 'dotenv';
 
+import { logger } from '../utils/logger.js';
 dotenv.config();
 
 const redisUrl = process.env.REDIS_URL || process.env.REDIS_CONNECTION_STRING;
 
 if (!redisUrl) {
-  console.warn('⚠️ Redis URL não configurada. O cache distribuído ficará desativado.');
+  logger.warn('⚠️ Redis URL não configurada. O cache distribuído ficará desativado.');
 }
 
 export const redisClient = redisUrl
@@ -26,10 +27,10 @@ export const isRedisEnabled = () => Boolean(redisClient);
 
 if (redisClient) {
   redisClient.on('error', (err) => {
-    console.error('Erro no Redis:', err);
+    logger.error({ err: err }, 'Erro no Redis');
   });
 
   redisClient.on('connect', () => {
-    console.log('✅ Redis conectado com sucesso');
+    logger.info('✅ Redis conectado com sucesso');
   });
 }

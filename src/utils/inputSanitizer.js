@@ -11,7 +11,7 @@
  */
 
 import validator from 'validator';
-import { secureLogger } from './secureLogger.js';
+import { logger, logSecurity } from './logger.js';
 
 /**
  * Remove caracteres perigosos de SQL
@@ -39,7 +39,7 @@ export function sanitizeNoSql(input) {
   for (const [key, value] of Object.entries(input)) {
     // Remove operadores MongoDB perigosos
     if (key.startsWith('$') || key.startsWith('_')) {
-      secureLogger.security('NoSQL injection attempt detected', { key });
+      logSecurity('nosql_injection_attempt', { key });
       continue;
     }
     
@@ -109,10 +109,10 @@ export function sanitizeString(input, options = {}) {
   // Limita tamanho
   if (sanitized.length > maxLength) {
     sanitized = sanitized.substring(0, maxLength);
-    secureLogger.warn('Input truncated', { 
+    logger.warn({ 
       originalLength: input.length, 
       maxLength 
-    });
+    }, 'Input truncated');
   }
   
   return sanitized;
@@ -127,12 +127,12 @@ export function sanitizeEmail(email) {
   const sanitized = email.trim().toLowerCase();
   
   if (!validator.isEmail(sanitized)) {
-    secureLogger.security('Invalid email format', { email: '[REDACTED]' });
+    logSecurity('invalid_email_format', { email: '[REDACTED]' });
     return null;
   }
   
   if (sanitized.length > 254) {
-    secureLogger.warn('Email too long', { length: sanitized.length });
+    logger.warn({ length: sanitized.length }, 'Email too long');
     return null;
   }
   
@@ -150,7 +150,7 @@ export function sanitizeUrl(url) {
   // Bloqueia protocolos perigosos
   const dangerousProtocols = ['javascript:', 'data:', 'vbscript:', 'file:'];
   if (dangerousProtocols.some(proto => sanitized.toLowerCase().startsWith(proto))) {
-    secureLogger.security('Dangerous URL protocol detected', { url: '[REDACTED]' });
+    logSecurity('dangerous_url_protocol', { url: '[REDACTED]' });
     return null;
   }
   
@@ -251,7 +251,7 @@ export function sanitizeUuid(uuid) {
   if (typeof uuid !== 'string') return null;
   
   if (!validator.isUUID(uuid)) {
-    secureLogger.security('Invalid UUID format', { uuid: '[REDACTED]' });
+    logSecurity('invalid_uuid_format', { uuid: '[REDACTED]' });
     return null;
   }
   
@@ -263,7 +263,7 @@ export function sanitizeUuid(uuid) {
  */
 export function sanitizeObject(obj, depth = 0) {
   if (depth > 10) {
-    secureLogger.warn('Max sanitization depth reached');
+    logger.warn('Max sanitization depth reached');
     return obj;
   }
   
@@ -314,7 +314,7 @@ export function sanitizePath(path) {
   
   // Não permite caminhos absolutos
   if (sanitized.startsWith('/')) {
-    secureLogger.security('Absolute path attempt detected', { path: '[REDACTED]' });
+    logSecurity('absolute_path_attempt', { path: '[REDACTED]' });
     return null;
   }
   
@@ -331,7 +331,7 @@ export function sanitizeJson(input) {
     const parsed = JSON.parse(input);
     return sanitizeObject(parsed);
   } catch (error) {
-    secureLogger.warn('Invalid JSON', { error: error.message });
+    logger.warn({ error: error.message }, 'Invalid JSON');
     return null;
   }
 }
@@ -387,7 +387,7 @@ export function sanitizationMiddleware(req, res, next) {
     });
     
     if (detectSuspiciousPatterns(allInputs)) {
-      secureLogger.security('Suspicious pattern detected in request', {
+      logSecurity('suspicious_pattern_detected', {
         method: req.method,
         url: req.originalUrl,
         ip: req.ip,
@@ -396,7 +396,7 @@ export function sanitizationMiddleware(req, res, next) {
     
     next();
   } catch (error) {
-    secureLogger.error('Sanitization middleware error', error);
+    logger.error({ err: error }, 'Sanitization middleware error');
     next();
   }
 }

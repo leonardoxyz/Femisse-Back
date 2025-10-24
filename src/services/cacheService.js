@@ -1,5 +1,6 @@
 import { LRUCache } from 'lru-cache';
 import { redisClient, isRedisEnabled } from '../config/redisClient.js';
+import { logger } from '../utils/logger.js';
 
 const DEFAULT_TTL_SECONDS = 60;
 const localCache = new LRUCache({ max: 500, ttl: DEFAULT_TTL_SECONDS * 1000 });
@@ -19,7 +20,7 @@ export const cacheGet = async (key) => {
     try {
       return JSON.parse(value);
     } catch (error) {
-      console.warn(`⚠️ Falha ao fazer parse do cache Redis para a chave ${key}:`, error);
+      logger.warn({ err: error, key }, 'Falha ao fazer parse do cache Redis');
       return null;
     }
   }

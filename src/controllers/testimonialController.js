@@ -1,10 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import supabase from '../services/supabaseClient.js';
 import { toPublicTestimonialList } from '../dto/testimonialDTO.js';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
+import { logger } from '../utils/logger.js';
 
 /**
  * GET /api/testimonials
@@ -19,7 +15,7 @@ const getAllTestimonials = async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Erro ao buscar testimonials:', error);
+      logger.error({ err: error }, 'Erro ao buscar testimonials');
       return res.status(500).json({
         success: false,
         message: 'Erro ao buscar depoimentos',
@@ -34,7 +30,7 @@ const getAllTestimonials = async (req, res) => {
       data: publicTestimonials,
     });
   } catch (error) {
-    console.error('Erro ao buscar testimonials:', error);
+    logger.error({ err: error }, 'Erro ao buscar testimonials');
     return res.status(500).json({
       success: false,
       message: 'Erro interno do servidor',

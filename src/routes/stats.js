@@ -3,6 +3,7 @@ import { performanceStats } from '../middleware/performanceMiddleware.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { strictRateLimit } from '../middleware/validationMiddleware.js';
 
+import { logger } from '../utils/logger.js';
 const router = express.Router();
 
 // Aplicar rate limiting e autenticação para stats
@@ -25,7 +26,7 @@ router.get('/performance', (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error getting performance stats:', error);
+    logger.error({ err: error }, 'Error getting performance stats');
     res.status(500).json({
       success: false,
       error: 'Erro ao obter estatísticas'
@@ -43,7 +44,7 @@ router.post('/performance/reset', (req, res) => {
       message: 'Estatísticas resetadas com sucesso'
     });
   } catch (error) {
-    console.error('Error resetting performance stats:', error);
+    logger.error({ err: error }, 'Error resetting performance stats');
     res.status(500).json({
       success: false,
       error: 'Erro ao resetar estatísticas'

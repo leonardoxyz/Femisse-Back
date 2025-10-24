@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { createClient } from '@supabase/supabase-js';
-import { validateUUID, sanitizeString, secureLog } from '../utils/securityUtils.js';
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+import rateLimit from 'express-rate-limit';
+import supabase from '../services/supabaseClient.js';
+import { sanitizeString } from '../utils/securityUtils.js';
+import { logger } from '../utils/logger.js';
 
 // Schema específico para validação de pagamentos Mercado Pago
 export const mercadoPagoPaymentSchema = z.object({
@@ -85,11 +85,11 @@ export const validatePaymentData = (req, res, next) => {
         message: err.message
       }));
       
-      secureLog('Payment validation failed:', { 
+      logger.info({ 
         errors, 
         userId: req.user?.id,
         ip: req.ip 
-      });
+      }, 'Payment validation failed:');
       
       return res.status(400).json({
         error: 'Dados de pagamento inválidos',
@@ -103,7 +103,7 @@ export const validatePaymentData = (req, res, next) => {
     
     next();
   } catch (error) {
-    console.error('Payment validation middleware error:', error);
+    logger.error({ err: error }, 'Payment validation middleware error');
     res.status(500).json({ error: 'Erro interno de validação de pagamento' });
   }
 };
@@ -138,27 +138,27 @@ export const verifyOrderIntegrity = async (req, res, next) => {
     // Busca o pedido no banco com dados do cupom
     const { data: order, error } = await supabase
       .from('orders')
-      .select('id, user_id, total, subtotal, shipping_cost, discount, status, payment_status, coupon_id, coupon_code, coupon_discount')
+      .select('id, user_id, order_number, total, subtotal, shipping_cost, discount, status, payment_status, coupon_id, coupon_code, coupon_discount')
       .eq('id', order_id)
       .eq('user_id', userId)
       .single();
     
     if (error || !order) {
-      secureLog('Order not found for payment:', { 
+      logger.info({ 
         order_id, 
         userId, 
         error: error?.message 
-      });
+      }, 'Order not found for payment:');
       return res.status(404).json({ error: 'Pedido não encontrado' });
     }
     
     // Verifica se o pedido pode ser pago
     if (order.payment_status !== 'pending') {
-      secureLog('Order payment status invalid:', { 
+      logger.info({ 
         order_id, 
         userId, 
         current_status: order.payment_status 
-      });
+      }, 'Order payment status invalid:');
       return res.status(400).json({ 
         error: 'Pedido não pode ser pago',
         details: 'Status de pagamento inválido'
@@ -189,12 +189,12 @@ export const verifyOrderIntegrity = async (req, res, next) => {
         .single();
       
       if (couponError || !coupon) {
-        secureLog('Coupon not found during payment verification:', { 
+        logger.info({ 
           order_id, 
           userId,
           coupon_id: order.coupon_id,
           coupon_code: order.coupon_code
-        });
+        }, 'Coupon not found during payment verification:');
         return res.status(400).json({ 
           error: 'Cupom inválido',
           details: 'O cupom aplicado não existe mais'
@@ -203,11 +203,11 @@ export const verifyOrderIntegrity = async (req, res, next) => {
       
       // Verificar se cupom ainda está ativo e válido
       if (!coupon.active) {
-        secureLog('Coupon inactive during payment:', { 
+        logger.info({ 
           order_id, 
           userId,
           coupon_code: coupon.code
-        });
+        }, 'Coupon inactive during payment:');
         return res.status(400).json({ 
           error: 'Cupom inativo',
           details: 'O cupom aplicado não está mais ativo'
@@ -219,11 +219,11 @@ export const verifyOrderIntegrity = async (req, res, next) => {
       const validTo = coupon.valid_to ? new Date(coupon.valid_to) : null;
       
       if (now < validFrom || (validTo && now > validTo)) {
-        secureLog('Coupon expired during payment:', { 
+        logger.info({ 
           order_id, 
           userId,
           coupon_code: coupon.code
-        });
+        }, 'Coupon expired during payment:');
         return res.status(400).json({ 
           error: 'Cupom expirado',
           details: 'O cupom aplicado expirou'
@@ -235,11 +235,11 @@ export const verifyOrderIntegrity = async (req, res, next) => {
       
       // Validar que subtotal existe
       if (subtotal <= 0) {
-        secureLog('Order subtotal missing or invalid:', { 
+        logger.info({ 
           order_id, 
           userId, 
           subtotal: order.subtotal
-        });
+        }, 'Order subtotal missing or invalid:');
         return res.status(400).json({ 
           error: 'Dados do pedido inválidos',
           details: 'Subtotal do pedido não encontrado'
@@ -260,14 +260,14 @@ export const verifyOrderIntegrity = async (req, res, next) => {
       const discountDifference = Math.abs(storedCouponDiscount - expectedDiscount);
       
       if (discountDifference > 0.02) {
-        secureLog('Coupon discount mismatch:', { 
+        logger.info({ 
           order_id, 
           userId, 
           coupon_code: coupon.code,
           expected_discount: expectedDiscount,
           applied_discount: order.coupon_discount,
           difference: discountDifference
-        });
+        }, 'Coupon discount mismatch:');
         return res.status(400).json({ 
           error: 'Desconto inválido',
           details: 'O desconto do cupom foi manipulado'
@@ -278,7 +278,7 @@ export const verifyOrderIntegrity = async (req, res, next) => {
       expectedTotal = subtotal - discount - expectedDiscount + shippingCost;
       expectedTotal = Math.round(expectedTotal * 100) / 100;
 
-      secureLog('Payment integrity check with coupon:', {
+      logger.info({
         order_id,
         userId,
         coupon_code: coupon.code,
@@ -289,30 +289,30 @@ export const verifyOrderIntegrity = async (req, res, next) => {
         shipping: order.shipping_cost,
         expected_total: expectedTotal,
         payment_amount: total_amount
-      });
+      }, 'Payment integrity check with coupon:');
     }
     
     // Verifica integridade do valor final (tolerância de 0.02 para arredondamento)
     const totalDifference = Math.abs(expectedTotal - total_amount);
     
     // Log detalhado para debug
-    console.log('=== PAYMENT INTEGRITY CHECK ===');
-    console.log('Order ID:', order_id);
-    console.log('Order Data:', {
+    logger.info('=== PAYMENT INTEGRITY CHECK ===');
+    logger.info({ order_id: order_id }, 'Order ID');
+    logger.info({ 
       subtotal: order.subtotal,
       shipping_cost: order.shipping_cost,
       discount: order.discount,
       coupon_discount: order.coupon_discount,
       total: order.total
-    });
-    console.log('Expected Total:', expectedTotal);
-    console.log('Payment Amount:', total_amount);
-    console.log('Difference:', totalDifference);
-    console.log('Has Coupon:', !!order.coupon_id);
-    console.log('===============================');
+    }, 'Order Data');
+    logger.info({ expectedTotal: expectedTotal }, 'Expected Total');
+    logger.info({ total_amount: total_amount }, 'Payment Amount');
+    logger.info({ totalDifference: totalDifference }, 'Difference');
+    logger.info({ hasCoupon: !!order.coupon_id }, 'Has Coupon');
+    logger.info('===============================');
     
     if (totalDifference > 0.02) {
-      secureLog('Payment amount mismatch:', { 
+      logger.info({ 
         order_id, 
         userId,
         order_subtotal: order.subtotal,
@@ -324,7 +324,7 @@ export const verifyOrderIntegrity = async (req, res, next) => {
         payment_amount: total_amount,
         difference: totalDifference,
         has_coupon: !!order.coupon_id
-      });
+      }, 'Payment amount mismatch:');
       return res.status(400).json({ 
         error: 'Valor do pagamento não confere',
         details: 'Integridade do pedido comprometida'
@@ -341,7 +341,7 @@ export const verifyOrderIntegrity = async (req, res, next) => {
     };
     next();
   } catch (error) {
-    console.error('Order integrity verification error:', error);
+    logger.error({ err: error }, 'Order integrity verification error');
     res.status(500).json({ error: 'Erro interno na verificação do pedido' });
   }
 };
@@ -351,7 +351,7 @@ export const logPaymentAttempt = (req, res, next) => {
   const { order_id, payment_method, total_amount } = req.validatedPayment;
   const userId = req.user.id;
   
-  secureLog('Payment attempt started:', {
+  logger.info({
     order_id,
     userId,
     payment_method,
@@ -359,14 +359,12 @@ export const logPaymentAttempt = (req, res, next) => {
     ip: req.ip,
     user_agent: req.get('User-Agent'),
     timestamp: new Date().toISOString()
-  });
+  }, 'Payment attempt started:');
   
   next();
 };
 
 // Rate limiting específico para pagamentos (mais restritivo)
-import rateLimit from 'express-rate-limit';
-
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
 export const paymentRateLimit = rateLimit({
@@ -380,11 +378,11 @@ export const paymentRateLimit = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: true, // Não contar requisições bem-sucedidas
   handler: (req, res) => {
-    secureLog('Payment rate limit exceeded:', {
+    logger.info({
       ip: req.ip,
       userId: req.user?.id,
       timestamp: new Date().toISOString()
-    });
+    }, 'Payment rate limit exceeded:');
     res.status(429).json({ 
       error: 'Muitas tentativas de pagamento',
       details: 'Aguarde alguns minutos antes de tentar novamente'

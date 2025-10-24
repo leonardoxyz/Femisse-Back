@@ -1,18 +1,15 @@
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
+import supabase from '../services/supabaseClient.js';
 import { 
   validateAddress, 
   validateUUID, 
-  secureLog, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
 import { toPublicAddressList } from '../dto/addressDTO.js';
+import { logger } from '../utils/logger.js';
+import { env } from '../config/validateEnv.js';
 
-dotenv.config();
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
-const isDevelopment = process.env.NODE_ENV !== 'production';
-const isProduction = process.env.NODE_ENV === 'production';
+const isDevelopment = env.NODE_ENV !== 'production';
+const isProduction = env.NODE_ENV === 'production';
 
 export async function listAddresses(req, res) {
   try {
@@ -29,7 +26,7 @@ export async function listAddresses(req, res) {
     
     res.json(data || []);
   } catch (err) {
-    console.error('Erro ao listar endereços:', err);
+    logger.error({ err: err }, 'Erro ao listar endereços');
     res.status(500).json({ error: 'Erro ao listar endereços', details: err.message });
   }
 }
@@ -53,7 +50,7 @@ export async function getAddressById(req, res) {
     
     res.json(data);
   } catch (err) {
-    console.error('Erro ao buscar endereço:', err);
+    logger.error({ err: err }, 'Erro ao buscar endereço');
     res.status(500).json({ error: 'Erro ao buscar endereço', details: err.message });
   }
 }
@@ -61,7 +58,7 @@ export async function getAddressById(req, res) {
 export async function createAddress(req, res) {
   try {
     const usuario_id = req.user.id;
-    secureLog('Creating address for user:', { usuario_id });
+    logger.info({ usuario_id }, 'Creating address for user:');
     
     const addressData = req.validatedBody ?? req.body;
     
@@ -82,7 +79,7 @@ export async function createAddress(req, res) {
       .eq('usuario_id', usuario_id);
     
     if (countError) {
-      console.error('Erro ao verificar limite de endereços:', countError);
+      logger.error({ err: countError }, 'Erro ao verificar limite de endereços');
     } else if (count >= 10) {
       return res.status(400).json({ 
         error: 'Limite atingido',
@@ -102,14 +99,14 @@ export async function createAddress(req, res) {
       .single();
     
     if (error) {
-      console.error('Erro ao criar endereço:', error);
+      logger.error({ err: error }, 'Erro ao criar endereço');
       return res.status(500).json(getErrorMessage(error, 'Erro ao criar endereço'));
     }
     
-    secureLog('Address created successfully');
+    logger.info('Address created successfully');
     res.status(201).json(data);
   } catch (err) {
-    console.error('Erro ao criar endereço:', err);
+    logger.error({ err: err }, 'Erro ao criar endereço');
     res.status(500).json(getErrorMessage(err, 'Erro ao criar endereço'));
   }
 }
@@ -128,7 +125,7 @@ export async function updateAddress(req, res) {
       });
     }
     
-    secureLog('Updating address:', { id, usuario_id });
+    logger.info({ id, usuario_id }, 'Updating address:');
     
     const addressData = req.validatedBody ?? req.body;
     
@@ -153,7 +150,7 @@ export async function updateAddress(req, res) {
       if (fetchError.code === 'PGRST116') {
         return res.status(404).json({ error: 'Endereço não encontrado' });
       }
-      console.error('Erro ao buscar endereço:', fetchError);
+      logger.error({ err: fetchError }, 'Erro ao buscar endereço');
       return res.status(500).json(getErrorMessage(fetchError, 'Erro ao atualizar endereço'));
     }
     
@@ -176,14 +173,14 @@ export async function updateAddress(req, res) {
       .single();
     
     if (error) {
-      console.error('Erro ao atualizar endereço:', error);
+      logger.error({ err: error }, 'Erro ao atualizar endereço');
       return res.status(500).json(getErrorMessage(error, 'Erro ao atualizar endereço'));
     }
     
-    secureLog('Address updated successfully');
+    logger.info('Address updated successfully');
     res.json(data);
   } catch (err) {
-    console.error('Erro ao atualizar endereço:', err);
+    logger.error({ err: err }, 'Erro ao atualizar endereço');
     res.status(500).json(getErrorMessage(err, 'Erro ao atualizar endereço'));
   }
 }
@@ -202,7 +199,7 @@ export async function deleteAddress(req, res) {
       });
     }
     
-    secureLog('Deleting address:', { id, usuario_id });
+    logger.info({ id, usuario_id }, 'Deleting address:');
     
     // Verifica se o endereço pertence ao usuário
     const { data: existingAddress, error: fetchError } = await supabase
@@ -215,7 +212,7 @@ export async function deleteAddress(req, res) {
       if (fetchError.code === 'PGRST116') {
         return res.status(404).json({ error: 'Endereço não encontrado' });
       }
-      console.error('Erro ao buscar endereço:', fetchError);
+      logger.error({ err: fetchError }, 'Erro ao buscar endereço');
       return res.status(500).json(getErrorMessage(fetchError, 'Erro ao deletar endereço'));
     }
     
@@ -232,14 +229,14 @@ export async function deleteAddress(req, res) {
       .eq('id', id);
     
     if (error) {
-      console.error('Erro ao deletar endereço:', error);
+      logger.error({ err: error }, 'Erro ao deletar endereço');
       return res.status(500).json(getErrorMessage(error, 'Erro ao deletar endereço'));
     }
     
-    secureLog('Address deleted successfully');
+    logger.info('Address deleted successfully');
     res.json({ message: 'Endereço deletado com sucesso' });
   } catch (err) {
-    console.error('Erro ao deletar endereço:', err);
+    logger.error({ err: err }, 'Erro ao deletar endereço');
     res.status(500).json(getErrorMessage(err, 'Erro ao deletar endereço'));
   }
 }
@@ -259,7 +256,7 @@ export async function listMyAddresses(req, res) {
     const addresses = toPublicAddressList(data);
     res.json({ success: true, data: addresses });
   } catch (err) {
-    console.error('Erro ao listar endereços do usuário:', err);
+    logger.error({ err: err }, 'Erro ao listar endereços do usuário');
     res.status(500).json({ success: false, message: 'Erro ao listar endereços do usuário autenticado', details: err.message });
   }
 }

@@ -1,7 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import supabase from '../services/supabaseClient.js';
 import { toPublicMomentProductList } from '../dto/momentProductsDTO.js';
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+import { logger } from '../utils/logger.js';
 
 export const getMomentProducts = async (req, res) => {
   try {

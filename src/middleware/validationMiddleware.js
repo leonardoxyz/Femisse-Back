@@ -1,33 +1,29 @@
+/**
+ * ⚠️ Middleware de Validação
+ * 
+ * Rate limiting foi movido para: @see middleware/rateLimit.js
+ * Sanitização foi movida para: @see utils/inputSanitizer.js
+ * 
+ * Este arquivo mantém apenas:
+ * - Schemas de validação (considerar mover para validators/)
+ * - Middleware validateRequest
+ * - Middleware sanitizeInput (wrapper)
+ * - Security headers
+ */
+
 import { z } from 'zod';
-import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { sanitizeString, detectSuspiciousPatterns } from '../validators/securitySchemas.js';
+import { sanitizeObject as sanitizeObjUtil } from '../utils/inputSanitizer.js';
+import { logger, logSecurity } from '../utils/logger.js';
 
-// Rate limiting para diferentes endpoints
-export const createRateLimit = (windowMs = 15 * 60 * 1000, max = 100, message = 'Muitas tentativas') => {
-  return rateLimit({
-    windowMs,
-    max,
-    message: { error: message },
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res) => {
-      console.log(`🚨 Rate limit exceeded:`, {
-        ip: req.ip,
-        endpoint: req.originalUrl,
-        method: req.method,
-        userAgent: req.get('User-Agent'),
-        timestamp: new Date().toISOString()
-      });
-      res.status(429).json({ error: message });
-    }
-  });
-};
-
-// Rate limits específicos
-export const authRateLimit = createRateLimit(15 * 60 * 1000, 5, 'Muitas tentativas de login');
-export const generalRateLimit = createRateLimit(15 * 60 * 1000, 100, 'Muitas requisições');
-export const strictRateLimit = createRateLimit(15 * 60 * 1000, 20, 'Limite de requisições excedido');
+// Re-export rate limiters do arquivo consolidado
+export { 
+  createRateLimit,
+  authRateLimit, 
+  generalRateLimit, 
+  strictRateLimit 
+} from './rateLimit.js';
 
 // Schemas de validação para backend
 const addressSchema = z.object({
@@ -154,7 +150,11 @@ export const validateRequest = (schema, target = 'body') => {
           message: err.message
         }));
         
-        console.log(`Validation error for ${req.method} ${req.originalUrl}:`, errors);
+        logger.warn({
+          method: req.method,
+          url: req.originalUrl,
+          errors
+        }, 'Validation error');
         
         return res.status(400).json({
           error: 'Dados inválidos',
@@ -169,39 +169,39 @@ export const validateRequest = (schema, target = 'body') => {
       
       next();
     } catch (error) {
-      console.error('Validation middleware error:', error);
+      logger.error({ err: error }, 'Validation middleware error');
       res.status(500).json({ error: 'Erro interno de validação' });
     }
   };
 };
 
-// Middleware de sanitização
+// Middleware de sanitização (wrapper para inputSanitizer)
 export const sanitizeInput = (req, res, next) => {
-  const sanitize = (obj) => {
-    if (typeof obj === 'string') {
-      return sanitizeString(obj);
+  try {
+    req.body = sanitizeObjUtil(req.body);
+    req.query = sanitizeObjUtil(req.query);
+    req.params = sanitizeObjUtil(req.params);
+    
+    // Detecta padrões suspeitos
+    const allInputs = JSON.stringify({
+      body: req.body,
+      query: req.query,
+      params: req.params,
+    });
+    
+    if (detectSuspiciousPatterns(allInputs)) {
+      logSecurity('suspicious_pattern_in_request', {
+        method: req.method,
+        url: req.originalUrl,
+        ip: req.ip,
+      });
     }
     
-    if (Array.isArray(obj)) {
-      return obj.map(sanitize);
-    }
-    
-    if (obj && typeof obj === 'object') {
-      const sanitized = {};
-      for (const key in obj) {
-        sanitized[key] = sanitize(obj[key]);
-      }
-      return sanitized;
-    }
-    
-    return obj;
-  };
-  
-  req.body = sanitize(req.body);
-  req.query = sanitize(req.query);
-  req.params = sanitize(req.params);
-  
-  next();
+    next();
+  } catch (error) {
+    logger.error({ err: error }, 'Sanitization middleware error');
+    next();
+  }
 };
 
 // Middleware de segurança adicional
@@ -233,16 +233,13 @@ export const securityLogger = (req, res, next) => {
   const isSuspicious = detectSuspiciousPatterns(requestData);
   
   if (isSuspicious) {
-    console.warn(`🚨 Suspicious request detected:`, {
+    logSecurity('suspicious_request_detected', {
       ip: req.ip,
       method: req.method,
       url: req.originalUrl,
       userAgent: req.get('User-Agent'),
       referer: req.get('Referer'),
       timestamp: new Date().toISOString(),
-      body: req.body,
-      query: req.query,
-      params: req.params
     });
     
     // Em produção, você pode querer bloquear ou alertar sobre isso

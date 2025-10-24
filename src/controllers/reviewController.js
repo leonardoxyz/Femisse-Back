@@ -1,4 +1,5 @@
 import supabase from '../services/supabaseClient.js';
+import { logger } from '../utils/logger.js';
 import {
   cacheDelete,
   cacheGet,
@@ -7,8 +8,7 @@ import {
 import { 
   validateUUID, 
   validateRating,
-  sanitizeString,
-  secureLog, 
+  sanitizeString, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
 import { 
@@ -87,7 +87,7 @@ export async function listUserReviews(req, res) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Erro ao listar avaliações:', error);
+      logger.error({ err: error }, 'Erro ao listar avaliações');
       return res.status(500).json({ success: false, message: 'Erro ao listar avaliações', details: error.message });
     }
 
@@ -106,7 +106,7 @@ export async function listUserReviews(req, res) {
     await cacheSet(cacheKey, formatted, REVIEW_LIST_TTL);
     return res.json({ success: true, data: formatted });
   } catch (error) {
-    console.error('Erro inesperado ao listar avaliações:', error);
+    logger.error({ err: error }, 'Erro inesperado ao listar avaliações');
     return res.status(500).json({ success: false, message: 'Erro interno ao listar avaliações', details: error.message });
   }
 }
@@ -130,7 +130,7 @@ export async function listReviewableProducts(req, res) {
       .order('created_at', { ascending: false });
 
     if (ordersError) {
-      console.error('Erro ao buscar pedidos:', ordersError);
+      logger.error({ err: ordersError }, 'Erro ao buscar pedidos');
       return res.status(500).json({ error: 'Erro ao listar produtos avaliáveis', details: ordersError.message });
     }
 
@@ -148,7 +148,7 @@ export async function listReviewableProducts(req, res) {
       .in('order_id', orderIds);
 
     if (itemsError) {
-      console.error('Erro ao buscar itens dos pedidos:', itemsError);
+      logger.error({ err: itemsError }, 'Erro ao buscar itens dos pedidos');
       return res.status(500).json({ error: 'Erro ao listar produtos avaliáveis', details: itemsError.message });
     }
 
@@ -159,7 +159,7 @@ export async function listReviewableProducts(req, res) {
       .eq('user_id', userId);
 
     if (reviewsError) {
-      console.error('Erro ao buscar reviews existentes:', reviewsError);
+      logger.error({ err: reviewsError }, 'Erro ao buscar reviews existentes');
       return res.status(500).json({ error: 'Erro ao listar produtos avaliáveis', details: reviewsError.message });
     }
 
@@ -206,7 +206,7 @@ export async function listReviewableProducts(req, res) {
     await cacheSet(cacheKey, formatted, REVIEWABLE_LIST_TTL);
     return res.json({ success: true, data: formatted });
   } catch (error) {
-    console.error('Erro inesperado ao listar produtos avaliáveis:', error);
+    logger.error({ err: error }, 'Erro inesperado ao listar produtos avaliáveis');
     return res.status(500).json({ success: false, message: 'Erro interno ao listar produtos avaliáveis', details: error.message });
   }
 }
@@ -216,7 +216,7 @@ export async function createReview(req, res) {
     const userId = req.user.id;
     let { product_id, order_id, rating, comment } = req.validatedBody ?? req.body;
     
-    secureLog('Creating review', { userId, product_id, order_id, rating });
+    logger.info({ userId, product_id, order_id, rating }, 'Creating review');
     
     // Valida product_id
     const productIdValidation = validateUUID(product_id);
@@ -282,7 +282,7 @@ export async function createReview(req, res) {
       }
     }
     
-    // Verifica rate limiting (máximo 5 reviews por dia por usuário)
+    // ✅ Rate limiting mais restritivo (máximo 3 reviews por dia por usuário)
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { count, error: countError } = await supabase
       .from('product_reviews')
@@ -291,11 +291,12 @@ export async function createReview(req, res) {
       .gte('created_at', oneDayAgo);
     
     if (countError) {
-      console.error('Erro ao verificar limite de reviews:', countError);
-    } else if (count >= 5) {
+      logger.info({ error: countError.message }, 'Error checking review rate limit');
+    } else if (count >= 3) {
+      logger.info({ userId, count }, 'Review rate limit exceeded');
       return res.status(429).json({ 
         error: 'Limite atingido',
-        details: 'Você pode criar no máximo 5 avaliações por dia'
+        details: 'Você pode criar no máximo 3 avaliações por dia'
       });
     }
 
@@ -304,13 +305,12 @@ export async function createReview(req, res) {
       .select('id, user_id')
       .eq('id', order_id)
       .single();
-    console.log('order lookup', { existingOrder, orderError });
 
     if (orderError) {
       if (orderError.code === 'PGRST116') {
         return res.status(404).json({ error: 'Pedido não encontrado' });
       }
-      console.error('Erro ao validar pedido para avaliação:', orderError);
+      logger.error({ err: orderError }, 'Erro ao validar pedido para avaliação');
       return res.status(500).json({ error: 'Erro ao validar pedido', details: orderError.message });
     }
 
@@ -336,22 +336,19 @@ export async function createReview(req, res) {
       if (error.code === '23505') {
         return res.status(409).json({ error: 'Você já avaliou este produto para este pedido' });
       }
-      console.error('Erro ao criar avaliação:', error);
       return res.status(500).json({ error: 'Erro ao criar avaliação', details: error.message });
     }
 
     await invalidateUserReviewCaches(userId);
     await invalidateProductStatsCache(product_id);
 
-    const { data: reviewData, error: fetchError } = await fetchDetailedReviewById(data.id);
-    if (fetchError) {
-      console.error('Erro ao carregar avaliação recém-criada:', fetchError);
-      return res.status(201).json({ id: data.id, message: 'Avaliação criada com sucesso' });
-    }
-
-    return res.status(201).json(reviewData);
+    return res.status(201).json({ 
+      id: data.id, 
+      product_id: data.product_id,
+      message: 'Avaliação criada com sucesso' 
+    });
   } catch (error) {
-    console.error('Erro inesperado ao criar avaliação:', error);
+    logger.error({ err: error }, 'Erro inesperado ao criar avaliação');
     return res.status(500).json({ error: 'Erro interno ao criar avaliação' });
   }
 }
@@ -371,7 +368,7 @@ export async function updateReview(req, res) {
       });
     }
     
-    secureLog('Updating review', { userId, id });
+    logger.info({ userId, id }, 'Updating review');
 
     const updates = {};
     
@@ -434,22 +431,19 @@ export async function updateReview(req, res) {
       if (error.code === 'PGRST116') {
         return res.status(404).json({ error: 'Avaliação não encontrada' });
       }
-      console.error('Erro ao atualizar avaliação:', error);
+      logger.error({ err: error }, 'Erro ao atualizar avaliação');
       return res.status(500).json({ error: 'Erro ao atualizar avaliação', details: error.message });
     }
 
     await invalidateUserReviewCaches(userId);
     await invalidateProductStatsCache(data.product_id);
 
-    const { data: reviewData, error: fetchError } = await fetchDetailedReviewById(id);
-    if (fetchError) {
-      console.error('Erro ao carregar avaliação atualizada:', fetchError);
-      return res.json({ id, message: 'Avaliação atualizada com sucesso' });
-    }
-
-    return res.json(reviewData);
+    return res.json({ 
+      id, 
+      message: 'Avaliação atualizada com sucesso' 
+    });
   } catch (error) {
-    console.error('Erro inesperado ao atualizar avaliação:', error);
+    logger.error({ err: error }, 'Erro inesperado ao atualizar avaliação');
     return res.status(500).json({ error: 'Erro interno ao atualizar avaliação' });
   }
 }
@@ -468,7 +462,7 @@ export async function deleteReview(req, res) {
       });
     }
     
-    secureLog('Deleting review', { userId, id });
+    logger.info({ userId, id }, 'Deleting review');
 
     const { data, error } = await supabase
       .from('product_reviews')
@@ -482,7 +476,7 @@ export async function deleteReview(req, res) {
       if (error.code === 'PGRST116') {
         return res.status(404).json({ error: 'Avaliação não encontrada' });
       }
-      console.error('Erro ao remover avaliação:', error);
+      logger.error({ err: error }, 'Erro ao remover avaliação');
       return res.status(500).json({ error: 'Erro ao remover avaliação', details: error.message });
     }
 
@@ -493,7 +487,7 @@ export async function deleteReview(req, res) {
 
     return res.json({ message: 'Avaliação removida com sucesso' });
   } catch (error) {
-    console.error('Erro inesperado ao remover avaliação:', error);
+    logger.error({ err: error }, 'Erro inesperado ao remover avaliação');
     return res.status(500).json({ error: 'Erro interno ao remover avaliação' });
   }
 }
@@ -522,7 +516,7 @@ export async function getProductReviewStats(req, res) {
       .rpc('get_product_rating_stats', { p_product_id: productId });
 
     if (error) {
-      console.error('Erro ao buscar estatísticas de avaliações:', error);
+      logger.error({ err: error }, 'Erro ao buscar estatísticas de avaliações');
       return res.status(500).json({ error: 'Erro ao buscar estatísticas', details: error.message });
     }
 
@@ -539,7 +533,7 @@ export async function getProductReviewStats(req, res) {
     await cacheSet(cacheKey, stats, PRODUCT_STATS_TTL);
     return res.json(stats);
   } catch (error) {
-    console.error('Erro inesperado ao buscar estatísticas de avaliações:', error);
+    logger.error({ err: error }, 'Erro inesperado ao buscar estatísticas de avaliações');
     return res.status(500).json({ error: 'Erro interno ao buscar estatísticas de avaliações' });
   }
 }

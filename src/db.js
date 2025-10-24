@@ -1,7 +1,6 @@
-import dotenv from 'dotenv';
-dotenv.config();
 import pg from 'pg';
+import { env } from './config/validateEnv.js';
 
 export const pool = new pg.Pool({
-  connectionString: process.env.SUPABASE_DB_URL || process.env.DATABASE_URL,
+  connectionString: env.SUPABASE_DB_URL || env.DATABASE_URL,
 });

@@ -22,6 +22,9 @@ const toPublicReviewList = (reviews = []) =>
 
 const toPublicReviewableProduct = (product) => {
   const publicProduct = {
+    id: product.productId ?? product.product_id ?? null,
+    productId: product.productId ?? product.product_id ?? null,
+    orderId: product.orderId ?? product.order_id ?? null,
     name: product.name ?? product.product_name ?? null,
     image: product.image ?? product.product_image ?? null,
     orderDate: product.orderDate ?? product.order_date ?? null,

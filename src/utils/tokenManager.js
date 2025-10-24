@@ -1,9 +1,7 @@
 import jwt from 'jsonwebtoken';
-import { createClient } from '@supabase/supabase-js';
+import supabase from '../services/supabaseClient.js';
 import { env } from '../config/validateEnv.js';
 import { logger } from './logger.js';
-
-const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_KEY);
 
 /**
  * Gera access token (curta duração)

@@ -1,36 +1,31 @@
+/**
+ * 🔒 Security Utilities - Validação e Helpers de Segurança
+ * 
+ * Este arquivo contém funções de VALIDAÇÃO.
+ * Para funções de SANITIZAÇÃO, use: @see utils/inputSanitizer.js
+ * 
+ * Mantido por compatibilidade com controllers existentes.
+ * Considerar migrar validações para validators/ no futuro.
+ */
+
 import validator from 'validator';
+import { sanitizeString as sanitizeStr, sanitizeObject as sanitizeObj } from './inputSanitizer.js';
+import { logger } from './logger.js';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 const isProduction = process.env.NODE_ENV === 'production';
 
 /**
- * Sanitiza strings removendo caracteres perigosos
+ * @deprecated Use sanitizeString from inputSanitizer.js instead
+ * Mantido por compatibilidade
  */
-export const sanitizeString = (str) => {
-  if (typeof str !== 'string') return str;
-  return validator.escape(str.trim());
-};
+export const sanitizeString = sanitizeStr;
 
 /**
- * Sanitiza recursivamente todos os campos string de um objeto
+ * @deprecated Use sanitizeObject from inputSanitizer.js instead
+ * Mantido por compatibilidade
  */
-export const sanitizeObject = (obj) => {
-  if (!obj || typeof obj !== 'object') return obj;
-  
-  const sanitized = Array.isArray(obj) ? [] : {};
-  
-  for (const key in obj) {
-    if (typeof obj[key] === 'string') {
-      sanitized[key] = sanitizeString(obj[key]);
-    } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-      sanitized[key] = sanitizeObject(obj[key]);
-    } else {
-      sanitized[key] = obj[key];
-    }
-  }
-  
-  return sanitized;
-};
+export const sanitizeObject = sanitizeObj;
 
 /**
  * Valida email
@@ -376,11 +371,13 @@ export const validateAddress = (address) => {
 };
 
 /**
+ * @deprecated Use logger from '../utils/logger.js' instead
  * Logger seguro (não loga dados sensíveis em produção)
+ * Mantido por compatibilidade - será removido em versão futura
  */
 export const secureLog = (message, data = {}) => {
   if (isDevelopment) {
-    console.log(message, data);
+    logger.info(data, message);
   } else {
     // Em produção, loga apenas informações não sensíveis
     const safeData = { ...data };
@@ -389,7 +386,7 @@ export const secureLog = (message, data = {}) => {
     delete safeData.password;
     delete safeData.token;
     delete safeData.cpf;
-    console.log(message, safeData);
+    logger.info(safeData, message);
   }
 };
 

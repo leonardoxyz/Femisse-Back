@@ -1,6 +1,7 @@
 import supabase from '../services/supabaseClient.js';
 import { validateUUID } from '../utils/securityUtils.js';
 
+import { logger } from '../utils/logger.js';
 /**
  * Atualizar status de um pedido (para admin/testes)
  */
@@ -48,7 +49,7 @@ export async function updateOrderStatus(req, res) {
       if (orderError.code === 'PGRST116') {
         return res.status(404).json({ error: 'Pedido não encontrado' });
       }
-      console.error('Erro ao buscar pedido:', orderError);
+      logger.error({ err: orderError }, 'Erro ao buscar pedido');
       return res.status(500).json({ error: 'Erro ao buscar pedido' });
     }
 
@@ -73,7 +74,7 @@ export async function updateOrderStatus(req, res) {
       .single();
 
     if (updateError) {
-      console.error('Erro ao atualizar pedido:', updateError);
+      logger.error({ err: updateError }, 'Erro ao atualizar pedido');
       return res.status(500).json({ error: 'Erro ao atualizar pedido' });
     }
 
@@ -83,7 +84,7 @@ export async function updateOrderStatus(req, res) {
     });
 
   } catch (error) {
-    console.error('Erro inesperado ao atualizar status do pedido:', error);
+    logger.error({ err: error }, 'Erro inesperado ao atualizar status do pedido');
     return res.status(500).json({ error: 'Erro interno ao atualizar pedido' });
   }
 }
@@ -114,14 +115,14 @@ export async function listUserOrdersDebug(req, res) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Erro ao listar pedidos:', error);
+      logger.error({ err: error }, 'Erro ao listar pedidos');
       return res.status(500).json({ error: 'Erro ao listar pedidos' });
     }
 
     return res.json(orders || []);
 
   } catch (error) {
-    console.error('Erro inesperado ao listar pedidos:', error);
+    logger.error({ err: error }, 'Erro inesperado ao listar pedidos');
     return res.status(500).json({ error: 'Erro interno' });
   }
 }

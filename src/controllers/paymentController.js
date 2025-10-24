@@ -1,15 +1,15 @@
 import supabase from '../services/supabaseClient.js';
-import { secureLog } from '../utils/securityUtils.js';
+import { getErrorMessage } from '../utils/securityUtils.js';
 import * as mercadoPagoService from '../services/mercadoPagoService.js';
 import * as paymentProcessingService from '../services/paymentProcessingService.js';
-
+import { logger } from '../utils/logger.js';
 export async function createPaymentPreference(req, res) {
   try {
     const paymentData = req.validatedPayment;
     const order = req.orderData;
     const userId = req.user.id;
 
-    secureLog('Creating payment preference:', { order_id: order.id, userId });
+    logger.info({ order_id: order.id, userId }, 'Creating payment preference:');
 
     const existingPayment = await paymentProcessingService.checkExistingApprovedPayment(order.id);
     if (existingPayment) {
@@ -69,7 +69,7 @@ export async function createPaymentPreference(req, res) {
       metadata: {
         user_id: userId,
         order_id: order.id,
-        order_number: order.order_number,
+        order_number: order.order_number || order.id.slice(-8),
         platform: 'feminisse-ecommerce'
       },
       expires: true,
@@ -90,7 +90,7 @@ export async function createPaymentPreference(req, res) {
       created_at: new Date().toISOString()
     });
 
-    secureLog('Payment preference created:', { order_id: order.id, preference_id: preference.id });
+    logger.info({ order_id: order.id, preference_id: preference.id }, 'Payment preference created:');
 
     res.status(201).json({
       preference_id: preference.id,
@@ -101,7 +101,7 @@ export async function createPaymentPreference(req, res) {
     });
 
   } catch (error) {
-    secureLog('Payment preference creation failed:', { error: error.message });
+    logger.info({ error: error.message }, 'Payment preference creation failed:');
     res.status(error.response?.status || 500).json({ 
       error: 'Erro ao processar pagamento',
       details: error.message 
@@ -115,7 +115,7 @@ export async function processDirectPayment(req, res) {
     const order = req.orderData;
     const userId = req.user.id;
 
-    secureLog('Processing direct payment:', { order_id: order.id, userId });
+    logger.info({ order_id: order.id, userId, order_number: order.order_number }, 'Processing direct payment:');
 
     const existingPayment = await paymentProcessingService.checkExistingApprovedPayment(order.id);
     if (existingPayment) {
@@ -144,11 +144,11 @@ export async function processDirectPayment(req, res) {
         identification: paymentData.payer.identification
       },
       external_reference: order.id,
-      description: `Pedido #${order.order_number} - Femisse${totalDiscount > 0 ? ` (Desconto: R$ ${totalDiscount.toFixed(2)})` : ''}`,
+      description: `Pedido #${order.order_number || order.id.slice(-8)} - Femisse${totalDiscount > 0 ? ` (Desconto: R$ ${totalDiscount.toFixed(2)})` : ''}`,
       metadata: {
         user_id: userId,
         order_id: order.id,
-        order_number: order.order_number,
+        order_number: order.order_number || order.id.slice(-8),
         platform: 'femisse-ecommerce',
         subtotal: pricing.subtotal,
         shipping_cost: pricing.shippingCost,
@@ -182,7 +182,7 @@ export async function processDirectPayment(req, res) {
 
     await paymentProcessingService.updateOrderStatus(order.id, payment.status);
 
-    secureLog('Direct payment processed:', { order_id: order.id, payment_id: payment.id });
+    logger.info({ order_id: order.id, payment_id: payment.id }, 'Direct payment processed:');
 
     const responseData = {
       payment_id: payment.id,
@@ -201,7 +201,7 @@ export async function processDirectPayment(req, res) {
     res.status(201).json(responseData);
 
   } catch (error) {
-    secureLog('Direct payment processing failed:', { error: error.message });
+    logger.info({ error: error.message }, 'Direct payment processing failed:');
     res.status(error.response?.status || 500).json({ 
       error: 'Pagamento rejeitado',
       details: error.message 
@@ -213,7 +213,7 @@ export async function handleWebhook(req, res) {
   try {
     const { type, data } = req.body;
 
-    secureLog('Webhook received:', { type, data_id: data?.id });
+    logger.info({ type, data_id: data?.id }, 'Webhook received:');
 
     if (type === 'payment' && data?.id) {
       const payment = await mercadoPagoService.getPaymentData(data.id);
@@ -223,7 +223,7 @@ export async function handleWebhook(req, res) {
     res.status(200).json({ received: true });
 
   } catch (error) {
-    console.error('Webhook processing error:', error);
+    logger.error({ err: error }, 'Webhook processing error');
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 }
@@ -272,7 +272,7 @@ export async function getPaymentStatus(req, res) {
     }
 
   } catch (error) {
-    console.error('Error getting payment status:', error);
+    logger.error({ err: error }, 'Error getting payment status');
     res.status(500).json({ error: 'Erro ao consultar status do pagamento' });
   }
 }

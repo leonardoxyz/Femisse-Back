@@ -43,31 +43,38 @@ function forceHTTPS(req, res, next) {
  * Middleware para adicionar security headers
  */
 function securityHeaders(req, res, next) {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   // HTTP Strict Transport Security (HSTS)
   // Force HTTPS por 1 ano, incluindo subdomínios
-  res.setHeader(
-    'Strict-Transport-Security',
-    'max-age=31536000; includeSubDomains; preload'
-  );
+  if (isProduction) {
+    res.setHeader(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains; preload'
+    );
+  }
 
   // Content Security Policy (CSP)
   // Previne XSS e injeção de conteúdo malicioso
-  const csp = [
-    "default-src 'self'",
-    "script-src 'self' https://sdk.mercadopago.com https://challenges.cloudflare.com",
-    "style-src 'self' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com data:",
-    "img-src 'self' data: https: blob:",
-    "connect-src 'self' https://api.mercadopago.com https://*.supabase.co wss://*.supabase.co",
-    "frame-src 'self' https://challenges.cloudflare.com https://www.mercadopago.com.br",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-    "upgrade-insecure-requests"
-  ].join('; ');
-  
-  res.setHeader('Content-Security-Policy', csp);
+  // Desabilitado em desenvolvimento para facilitar debug
+  if (isProduction) {
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' https://sdk.mercadopago.com https://challenges.cloudflare.com",
+      "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: https: blob:",
+      "connect-src 'self' https://api.mercadopago.com https://*.supabase.co wss://*.supabase.co",
+      "frame-src 'self' https://challenges.cloudflare.com https://www.mercadopago.com.br",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "upgrade-insecure-requests"
+    ].join('; ');
+    
+    res.setHeader('Content-Security-Policy', csp);
+  }
 
   // X-Content-Type-Options
   // Previne MIME type sniffing

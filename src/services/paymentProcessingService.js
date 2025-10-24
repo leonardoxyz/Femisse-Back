@@ -1,6 +1,6 @@
 import supabase from './supabaseClient.js';
-import { secureLog } from '../utils/securityUtils.js';
-
+import { getErrorMessage } from '../utils/securityUtils.js';
+import { logger } from '../utils/logger.js';
 /**
  * Verifica se já existe pagamento aprovado para um pedido
  */
@@ -79,7 +79,7 @@ export async function savePaymentData(paymentData) {
     .insert(paymentData);
 
   if (error) {
-    secureLog('Error saving payment data:', { error: error.message });
+    logger.info({ error: error.message }, 'Error saving payment data:');
   }
 
   return error;
@@ -135,18 +135,18 @@ export async function processPaymentNotification(mpPayment) {
     .eq('mp_payment_id', mpPayment.id);
 
   if (updateError) {
-    secureLog('Error updating payment:', { error: updateError.message });
+    logger.info({ error: updateError.message }, 'Error updating payment:');
     return;
   }
 
   // Atualizar status do pedido
   const { orderStatus, paymentStatus } = await updateOrderStatus(orderId, mpPayment.status);
 
-  secureLog('Order status updated:', { 
+  logger.info({ 
     order_id: orderId,
     payment_status: paymentStatus,
     order_status: orderStatus 
-  });
+  }, 'Order status updated:');
 }
 
 /**

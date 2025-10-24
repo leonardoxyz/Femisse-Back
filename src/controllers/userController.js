@@ -1,5 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
+import supabase from '../services/supabaseClient.js';
 import { 
   validateEmail,
   validateCPF,
@@ -7,17 +6,13 @@ import {
   validateBirthDate,
   validateName,
   validateUUID,
-  sanitizeString,
-  secureLog, 
-  getErrorMessage 
 } from '../utils/securityUtils.js';
 import { toPublicProfile } from '../dto/userDTO.js';
+import { logger } from '../utils/logger.js';
+import { env } from '../config/validateEnv.js';
 
-dotenv.config();
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
-const isDevelopment = process.env.NODE_ENV !== 'production';
-const isProduction = process.env.NODE_ENV === 'production';
+const isDevelopment = env.NODE_ENV !== 'production';
+const isProduction = env.NODE_ENV === 'production';
 
 export async function listUsers(req, res) {
   try {
@@ -28,7 +23,7 @@ export async function listUsers(req, res) {
     if (error) throw error;
     res.json(data || []);
   } catch (err) {
-    console.error('Erro ao listar usuários:', err);
+    logger.error({ err: err }, 'Erro ao listar usuários');
     res.status(500).json({ error: 'Erro ao listar usuários', details: err.message });
   }
 }
@@ -46,7 +41,7 @@ export async function getUserById(req, res) {
       });
     }
     
-    secureLog('Buscando usuário com ID:', { id });
+    logger.info({ id }, 'Buscando usuário com ID:');
     
     const { data, error } = await supabase
       .from('usuarios')
@@ -54,7 +49,7 @@ export async function getUserById(req, res) {
       .eq('id', id)
       .single();
     
-    console.log('Resultado da busca:', { data, error });
+    logger.info({ data, error }, 'Resultado da busca');
     
     if (error) {
       if (error.code === 'PGRST116') {
@@ -65,7 +60,7 @@ export async function getUserById(req, res) {
     
     res.json(data);
   } catch (err) {
-    console.error('Erro ao buscar usuário:', err);
+    logger.error({ err: err }, 'Erro ao buscar usuário');
     res.status(500).json({ error: 'Erro ao buscar usuário', details: err.message });
   }
 }
@@ -73,7 +68,11 @@ export async function getUserById(req, res) {
 export async function getMyProfile(req, res) {
   try {
     const userId = req.user.id; // ID do usuário autenticado
-    console.log('🔍 Buscando perfil do usuário:', userId);
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
     
     const { data, error } = await supabase
       .from('usuarios')
@@ -82,19 +81,18 @@ export async function getMyProfile(req, res) {
       .single();
     
     if (error) {
-      console.error('❌ Erro ao buscar perfil:', error);
       if (error.code === 'PGRST116') {
         return res.status(404).json({ success: false, message: 'Perfil não encontrado' });
       }
       throw error;
     }
     
-    console.log('✅ Dados do banco:', data);
+    // ✅ Usuário autenticado pode ver seus próprios dados sensíveis
     const profile = toPublicProfile(data);
-    console.log('✅ Perfil após DTO:', profile);
-    res.json({ success: true, data: profile });
+    logger.info({ userId }, 'Profile retrieved');
+    res.status(200).json({ success: true, data: profile });
   } catch (err) {
-    console.error('❌ Erro ao buscar perfil:', err);
+    logger.info({ error: err.message }, 'Error fetching profile');
     res.status(500).json({ success: false, message: 'Erro ao buscar perfil', details: err.message });
   }
 }
@@ -119,7 +117,7 @@ export async function createUser(req, res) {
     if (error) throw error;
     res.status(201).json(data);
   } catch (err) {
-    console.error('Erro ao criar usuário:', err);
+    logger.error({ err: err }, 'Erro ao criar usuário');
     res.status(500).json({ error: 'Erro ao criar usuário', details: err.message });
   }
 }
@@ -177,7 +175,7 @@ export async function updateUser(req, res) {
     
     res.json(data);
   } catch (err) {
-    console.error('Erro ao atualizar usuário:', err);
+    logger.error({ err: err }, 'Erro ao atualizar usuário');
     res.status(500).json({ error: 'Erro ao atualizar usuário', details: err.message });
   }
 }
@@ -211,7 +209,7 @@ export async function deleteUser(req, res) {
     
     res.json({ message: 'Usuário deletado com sucesso' });
   } catch (err) {
-    console.error('Erro ao deletar usuário:', err);
+    logger.error({ err: err }, 'Erro ao deletar usuário');
     res.status(500).json({ error: 'Erro ao deletar usuário', details: err.message });
   }
 }
@@ -295,48 +293,42 @@ export async function updateMyProfile(req, res) {
     
     if (error) {
       if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: 'Usuário não encontrado' });
+        return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
       }
       throw error;
     }
 
-    // Não retornar dados sensíveis
-    const user = data;
-    const safeUser = {
-      id: user.id,
-      nome: user.nome,
-      data_nascimento: user.data_nascimento,
-      cpf: user.cpf,
-      telefone: user.telefone,
-      email: user.email
-    };
-
+    // ✅ Usuário autenticado pode ver seus próprios dados atualizados
+    const profile = toPublicProfile(data);
+    logger.info({ userId }, 'Profile updated');
+    
     res.json({
+      success: true,
       message: 'Perfil atualizado com sucesso',
-      user: safeUser
+      data: profile
     });
     
   } catch (err) {
-    // Log do erro (em produção, usar logger profissional)
-    console.error('Erro ao atualizar perfil:', {
+    logger.info({ 
       userId: req.user?.id,
       error: err.message,
       code: err.code
-    });
+    }, 'Error updating profile');
     
     // Tratar erros específicos
     if (err.code === '23505') { // Violação de constraint única
       if (err.constraint?.includes('cpf')) {
-        return res.status(409).json({ error: 'CPF já está em uso' });
+        return res.status(409).json({ success: false, message: 'CPF já está em uso' });
       }
       if (err.constraint?.includes('email')) {
-        return res.status(409).json({ error: 'Email já está em uso' });
+        return res.status(409).json({ success: false, message: 'Email já está em uso' });
       }
     }
     
     // Erro genérico (não expor detalhes internos)
     res.status(500).json({ 
-      error: 'Erro interno do servidor' 
+      success: false,
+      message: 'Erro interno do servidor' 
     });
   }
 }

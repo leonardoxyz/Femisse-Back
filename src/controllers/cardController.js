@@ -1,5 +1,6 @@
 import supabase from '../services/supabaseClient.js';
 
+import { logger } from '../utils/logger.js';
 export async function listCards(req, res) {
   try {
     const { usuario_id } = req.query;
@@ -17,7 +18,7 @@ export async function listCards(req, res) {
 
     res.json(data ?? []);
   } catch (error) {
-    console.error('Erro ao listar cartões:', error);
+    logger.error({ err: error }, 'Erro ao listar cartões');
     res.status(500).json({ error: 'Erro ao listar cartões' });
   }
 }
@@ -41,7 +42,7 @@ export async function getCardById(req, res) {
 
     res.json(data);
   } catch (error) {
-    console.error('Erro ao buscar cartão:', error);
+    logger.error({ err: error }, 'Erro ao buscar cartão');
     res.status(500).json({ error: 'Erro ao buscar cartão' });
   }
 }
@@ -74,7 +75,7 @@ export async function createCard(req, res) {
 
     res.status(201).json(data);
   } catch (error) {
-    console.error('Erro ao criar cartão:', error);
+    logger.error({ err: error }, 'Erro ao criar cartão');
     res.status(500).json({ error: 'Erro ao criar cartão' });
   }
 }
@@ -119,7 +120,7 @@ export async function updateCard(req, res) {
 
     res.json(data);
   } catch (error) {
-    console.error('Erro ao atualizar cartão:', error);
+    logger.error({ err: error }, 'Erro ao atualizar cartão');
     res.status(500).json({ error: 'Erro ao atualizar cartão' });
   }
 }
@@ -144,7 +145,7 @@ export async function deleteCard(req, res) {
 
     res.json({ message: 'Cartão deletado com sucesso' });
   } catch (error) {
-    console.error('Erro ao deletar cartão:', error);
+    logger.error({ err: error }, 'Erro ao deletar cartão');
     res.status(500).json({ error: 'Erro ao deletar cartão' });
   }
 }

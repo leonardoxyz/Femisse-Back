@@ -1,5 +1,6 @@
 import compression from 'compression';
 import { createClient } from '@supabase/supabase-js';
+import { logger } from '../utils/logger.js';
 
 // Cache em memória simples (para produção, usar Redis)
 const cache = new Map();
@@ -33,7 +34,7 @@ export const cacheMiddleware = (ttl = CACHE_TTL) => {
     // Verificar se existe no cache
     const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < ttl) {
-      console.log(`📦 Cache hit: ${cacheKey}`);
+      logger.debug({ cacheKey }, 'Cache hit');
       return res.json(cached.data);
     }
 
@@ -104,7 +105,7 @@ export const performanceLogger = (req, res, next) => {
   const startTime = Date.now();
   
   // Log da request
-  console.log(`🚀 ${req.method} ${req.originalUrl} - ${req.ip}`);
+  logger.info({ method: req.method, url: req.originalUrl, ip: req.ip }, 'HTTP Request');
   
   // Interceptar o fim da response
   const originalEnd = res.end;
@@ -119,11 +120,11 @@ export const performanceLogger = (req, res, next) => {
     else if (duration > 1000) logColor = '🐌'; // Slow
     else if (duration > 500) logColor = '⏳'; // Medium
     
-    console.log(`${logColor} ${req.method} ${req.originalUrl} - ${status} - ${duration}ms`);
+    logger.info({ method: req.method, url: req.originalUrl, status, duration: `${duration}ms` }, 'HTTP Response');
     
     // Alertar para requests muito lentas
     if (duration > 2000) {
-      console.warn(`🚨 Slow request detected: ${req.method} ${req.originalUrl} took ${duration}ms`);
+      logger.warn({ method: req.method, url: req.originalUrl, duration: `${duration}ms` }, 'Slow request detected');
     }
     
     return originalEnd.apply(this, args);

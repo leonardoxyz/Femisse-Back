@@ -16,22 +16,44 @@ import {
   userParamsSchema,
   profileUpdateSchema,
 } from '../validators/userSchemas.js';
-import {
-  cpfVerificationLimiter,
-  cpfUpdateLimiter,
-  userRoutesLimiter
-} from '../middleware/cpfRateLimit.js';
+import { createRateLimit } from '../middleware/rateLimit.js';
 
 const router = express.Router();
 
 // ✅ Rate limit geral para todas as rotas de usuário
-router.use(userRoutesLimiter);
+router.use(createRateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // 100 requisições por janela
+  message: {
+    error: 'Muitas requisições',
+    message: 'Você excedeu o limite de requisições. Tente novamente em 15 minutos.',
+    retryAfter: '15 minutos'
+  },
+  standardHeaders: true, // Retorna info de rate limit nos headers
+  legacyHeaders: false,
+  skipSuccessfulRequests: false, // Conta todas as requisições
+  skipFailedRequests: false,
+  keyGenerator: (req) => req.ip,
+}));
 
 // Rotas do usuário autenticado (devem vir antes das rotas com parâmetros)
 // ✅ Rate limit específico para verificação de CPF
 router.get('/profile', 
   authenticateToken, 
-  cpfVerificationLimiter,  // 30 req / 15min
+  createRateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 30, // 30 requisições por janela
+    message: {
+      error: 'Muitas tentativas de verificação',
+      message: 'Você excedeu o limite de verificações. Tente novamente em 15 minutos.',
+      retryAfter: '15 minutos'
+    },
+    standardHeaders: true, // Retorna info de rate limit nos headers
+    legacyHeaders: false,
+    skipSuccessfulRequests: false, // Conta todas as requisições
+    skipFailedRequests: false,
+    keyGenerator: (req) => req.ip,
+  }),
   getMyProfile
 );
 
@@ -39,7 +61,20 @@ router.get('/profile',
 router.put(
   '/profile',
   authenticateToken,
-  cpfUpdateLimiter,  // 5 req / hora
+  createRateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hora
+    max: 5, // 5 requisições por janela
+    message: {
+      error: 'Muitas tentativas de atualização',
+      message: 'Você excedeu o limite de atualizações. Tente novamente em 1 hora.',
+      retryAfter: '1 hora'
+    },
+    standardHeaders: true, // Retorna info de rate limit nos headers
+    legacyHeaders: false,
+    skipSuccessfulRequests: false, // Conta todas as requisições
+    skipFailedRequests: false,
+    keyGenerator: (req) => req.ip,
+  }),
   validateRequest(profileUpdateSchema),
   updateMyProfile
 );

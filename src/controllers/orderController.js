@@ -1,9 +1,10 @@
 import supabase from '../services/supabaseClient.js';
-import { validateUUID, validateLimit, secureLog, getErrorMessage } from '../utils/securityUtils.js';
+import { validateUUID, validateLimit, getErrorMessage } from '../utils/securityUtils.js';
 import { registerCouponUsage } from './couponController.js';
 import { toPublicOrderList } from '../dto/orderDTO.js';
 import * as orderService from '../services/orderService.js';
 
+import { logger } from '../utils/logger.js';
 const normalizeShippingPayload = (shipping) => ({
   shipping_name: shipping.name,
   shipping_street: shipping.street,
@@ -49,11 +50,11 @@ export async function listOrders(req, res) {
     }
 
     const formattedOrders = toPublicOrderList(orders);
-    secureLog('All orders listed:', { count: orders.length });
+    logger.info({ count: orders.length }, 'All orders listed:');
     res.json({ success: true, data: formattedOrders });
 
   } catch (error) {
-    secureLog('Error listing all orders:', { error: error.message });
+    logger.info({ error: error.message }, 'Error listing all orders:');
     res.status(500).json(getErrorMessage(error, 'Erro ao listar pedidos'));
   }
 }
@@ -61,17 +62,25 @@ export async function listOrders(req, res) {
 export async function listUserOrders(req, res) {
   try {
     const userId = req.user.id;
-    const limit = validateLimit(req.query.limit, 10);
-    const offset = parseInt(req.query.offset) || 0;
+    const limitObj = validateLimit(req.query.limit, 10);
+    const limit = limitObj.value;
+    
+    let offset = 0;
+    if (req.query.page) {
+      const page = parseInt(req.query.page);
+      offset = (page - 1) * limit;
+    } else if (req.query.offset) {
+      offset = parseInt(req.query.offset);
+    }
 
     const orders = await orderService.getUserOrders(userId, limit, offset);
     const formattedOrders = toPublicOrderList(orders);
 
-    secureLog('Orders listed:', { userId, count: orders.length });
+    logger.info({ userId, count: orders.length }, 'Orders listed:');
     res.json({ success: true, data: formattedOrders });
 
   } catch (error) {
-    secureLog('Error listing user orders:', { error: error.message });
+    logger.info({ error: error.message }, 'Error listing user orders:');
     res.status(500).json(getErrorMessage(error, 'Erro ao listar pedidos'));
   }
 }
@@ -103,11 +112,11 @@ export async function getOrderById(req, res) {
     const items = await orderService.getOrderItems(id);
     const formattedOrder = toPublicOrderList([{ ...order, items }])[0];
 
-    secureLog('Order retrieved:', { orderId: id });
+    logger.info({ orderId: id }, 'Order retrieved:');
     res.json({ success: true, data: formattedOrder });
 
   } catch (error) {
-    secureLog('Error getting order:', { error: error.message });
+    logger.info({ error: error.message }, 'Error getting order:');
     res.status(500).json(getErrorMessage(error, 'Erro ao buscar pedido'));
   }
 }
@@ -127,11 +136,11 @@ export async function getOrderDetail(req, res) {
 
     const formattedOrder = toPublicOrderList([{ ...order, items }])[0];
 
-    secureLog('Order detail retrieved:', { orderId, userId });
+    logger.info({ orderId, userId }, 'Order detail retrieved:');
     res.json({ success: true, data: formattedOrder });
 
   } catch (error) {
-    secureLog('Error getting order detail:', { error: error.message });
+    logger.info({ error: error.message }, 'Error getting order detail:');
     res.status(500).json(getErrorMessage(error, 'Erro ao buscar pedido'));
   }
 }
@@ -247,11 +256,11 @@ export async function createOrder(req, res) {
       await registerCouponUsage(userId, coupon_code, order.id);
     }
 
-    secureLog('Order created:', { orderId: order.id, userId });
+    logger.info({ orderId: order.id, userId }, 'Order created:');
     res.status(201).json({ success: true, data: order });
 
   } catch (error) {
-    secureLog('Error creating order:', { error: error.message });
+    logger.info({ error: error.message }, 'Error creating order:');
     res.status(500).json(getErrorMessage(error, 'Erro ao criar pedido'));
   }
 }
@@ -284,11 +293,11 @@ export async function updateOrder(req, res) {
     updates.updated_at = new Date().toISOString();
     const updatedOrder = await orderService.updateOrder(id, updates);
 
-    secureLog('Order updated:', { orderId: id });
+    logger.info({ orderId: id }, 'Order updated:');
     res.json({ success: true, data: updatedOrder });
 
   } catch (error) {
-    secureLog('Error updating order:', { error: error.message });
+    logger.info({ error: error.message }, 'Error updating order:');
     res.status(500).json(getErrorMessage(error, 'Erro ao atualizar pedido'));
   }
 }
@@ -313,11 +322,11 @@ export async function updateOrderStatus(req, res) {
 
     const updatedOrder = await orderService.updateOrder(orderId, updates);
 
-    secureLog('Order status updated:', { orderId, status, payment_status });
+    logger.info({ orderId, status, payment_status }, 'Order status updated:');
     res.json({ success: true, data: updatedOrder });
 
   } catch (error) {
-    secureLog('Error updating order status:', { error: error.message });
+    logger.info({ error: error.message }, 'Error updating order status:');
     res.status(500).json(getErrorMessage(error, 'Erro ao atualizar pedido'));
   }
 }
@@ -353,11 +362,11 @@ export async function deleteOrder(req, res) {
       await orderService.invalidateUserOrderCaches(userId);
     }
 
-    secureLog('Order deleted:', { orderId: id });
+    logger.info({ orderId: id }, 'Order deleted:');
     res.json({ success: true, message: 'Pedido deletado com sucesso' });
 
   } catch (error) {
-    secureLog('Error deleting order:', { error: error.message });
+    logger.info({ error: error.message }, 'Error deleting order:');
     res.status(500).json(getErrorMessage(error, 'Erro ao deletar pedido'));
   }
 }
@@ -385,11 +394,11 @@ export async function cancelOrder(req, res) {
 
     await orderService.invalidateUserOrderCaches(userId);
 
-    secureLog('Order cancelled:', { orderId, userId });
+    logger.info({ orderId, userId }, 'Order cancelled:');
     res.json({ success: true, data: updatedOrder });
 
   } catch (error) {
-    secureLog('Error cancelling order:', { error: error.message });
+    logger.info({ error: error.message }, 'Error cancelling order:');
     res.status(500).json(getErrorMessage(error, 'Erro ao cancelar pedido'));
   }
 }

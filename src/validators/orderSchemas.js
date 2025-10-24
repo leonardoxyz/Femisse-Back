@@ -119,6 +119,8 @@ export const orderListQuerySchema = z.object({
   status: orderStatusEnum.optional(),
   payment_status: paymentStatusEnum.optional(),
   limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  page: z.coerce.number().int().positive().optional(),
 });
 
 export const orderUserListQuerySchema = orderListQuerySchema.omit({ user_id: true, payment_status: true });

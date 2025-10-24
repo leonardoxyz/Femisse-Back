@@ -1,5 +1,6 @@
 import supabase from '../services/supabaseClient.js';
 
+import { logger } from '../utils/logger.js';
 export async function getFavorites(req, res) {
   try {
     const userId = req.user.id;
@@ -20,7 +21,7 @@ export async function getFavorites(req, res) {
     const favorites = data?.favorites || [];
     res.json(favorites);
   } catch (err) {
-    console.error('Erro ao buscar favoritos:', err);
+    logger.error({ err: err }, 'Erro ao buscar favoritos');
     res.status(500).json({ error: 'Erro ao buscar favoritos', details: err.message });
   }
 }
@@ -69,7 +70,7 @@ export async function addFavorite(req, res) {
     
     res.json(favorites);
   } catch (err) {
-    console.error('Erro ao adicionar favorito:', err);
+    logger.error({ err: err }, 'Erro ao adicionar favorito');
     res.status(500).json({ error: 'Erro ao adicionar favorito', details: err.message });
   }
 }
@@ -113,7 +114,7 @@ export async function removeFavorite(req, res) {
     
     res.json(favorites);
   } catch (err) {
-    console.error('Erro ao remover favorito:', err);
+    logger.error({ err: err }, 'Erro ao remover favorito');
     res.status(500).json({ error: 'Erro ao remover favorito', details: err.message });
   }
 }
@@ -133,7 +134,7 @@ export async function clearFavorites(req, res) {
     
     res.json({ message: 'Favoritos limpos com sucesso', favorites: [] });
   } catch (err) {
-    console.error('Erro ao limpar favoritos:', err);
+    logger.error({ err: err }, 'Erro ao limpar favoritos');
     res.status(500).json({ error: 'Erro ao limpar favoritos', details: err.message });
   }
 }

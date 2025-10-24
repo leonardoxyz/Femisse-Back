@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { env, isDevelopment, isProduction } from './config/validateEnv.js';
 import { logger, httpLogger } from './utils/logger.js';
@@ -14,7 +13,6 @@ import {
 } from './middleware/performanceMiddleware.js';
 import {
   generalRateLimit,
-  securityHeaders,
   sanitizeInput,
   securityLogger,
 } from './middleware/validationMiddleware.js';
@@ -60,9 +58,8 @@ app.use(statsCollector);
 // ============================================
 // MIDDLEWARES DE SEGURANÇA
 // ============================================
-// ✅ HTTPS Forçado e Security Headers Avançados
+// ✅ HTTPS Forçado e Security Headers consolidados
 app.use(...applySecurity());
-app.use(securityHeaders);
 app.use(sanitizeInput);
 app.use(securityLogger);
 
@@ -87,31 +84,6 @@ app.use((req, res, next) => {
   // Aplica rate limit para outras rotas
   generalRateLimit(req, res, next);
 });
-
-// Helmet com CSP (desabilitado em desenvolvimento para evitar bloqueios)
-if (isProduction) {
-  app.use(
-    helmet.contentSecurityPolicy({
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-        frameSrc: ["'none'"],
-        upgradeInsecureRequests: [],
-      },
-    })
-  );
-} else {
-  // Em desenvolvimento, usa Helmet sem CSP
-  app.use(helmet({
-    contentSecurityPolicy: false,
-  }));
-}
 
 // ============================================
 // CORS CONFIGURAÇÃO

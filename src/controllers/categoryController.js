@@ -1,8 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
+import supabase from '../services/supabaseClient.js';
 import { toPublicCategoryList } from '../dto/categoryDTO.js';
 import { cacheGet, cacheSet, cacheDelete } from '../services/cacheService.js';
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+import { logger } from '../utils/logger.js';
 
 const CATEGORIES_CACHE_KEY = 'cache:categories:all';
 const CATEGORIES_CACHE_TTL = 300; // 5 minutos

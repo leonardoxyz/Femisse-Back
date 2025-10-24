@@ -14,6 +14,7 @@ import {
 } from '../utils/securityUtils.js';
 import { toPublicProductList, toPublicProduct } from '../dto/productsDTO.js';
 import { generateSlug } from '../utils/slugGenerator.js';
+import { logger } from '../utils/logger.js';
 
 const PRODUCTS_LIST_KEYS_SET = 'cache:products:list-keys';
 const PRODUCTS_LIST_TTL = 120;
@@ -43,12 +44,12 @@ export async function getAllProducts(req, res) {
       categoria_slug = String(categoria_slug);
     }
     
-    console.log('🔍 getAllProducts chamado com:', { categoria_slug, search, ids });
+    logger.info({ categoria_slug, search, ids }, 'getAllProducts chamado');
     
     // Se fornecido slug, busca o ID da categoria
     if (categoria_slug && categoria_slug.trim() !== '') {
       const slugTrimmed = categoria_slug.trim();
-      console.log('🔍 Buscando categoria com slug:', slugTrimmed);
+      logger.debug({ slug: slugTrimmed }, 'Buscando categoria com slug');
       
       // Busca TODAS as categorias e compara slug gerado
       const { data: allCategories, error: categoriesError } = await supabase
@@ -56,7 +57,7 @@ export async function getAllProducts(req, res) {
         .select('id, name');
       
       if (categoriesError || !allCategories) {
-        console.error('❌ Erro ao buscar categorias:', categoriesError);
+        logger.error({ err: categoriesError }, 'Erro ao buscar categorias');
         return res.status(500).json({ 
           error: 'Erro ao buscar categorias',
           details: categoriesError?.message || 'Erro desconhecido'
@@ -67,7 +68,7 @@ export async function getAllProducts(req, res) {
       const foundCategory = allCategories.find(cat => generateSlug(cat.name) === slugTrimmed);
       
       if (!foundCategory) {
-        console.error('❌ Categoria não encontrada para slug:', slugTrimmed);
+        logger.warn({ slug: slugTrimmed }, 'Categoria não encontrada');
         return res.status(404).json({ 
           error: 'Categoria não encontrada',
           details: `Nenhuma categoria com slug "${slugTrimmed}" foi encontrada`
@@ -75,9 +76,9 @@ export async function getAllProducts(req, res) {
       }
       
       categoria_id = foundCategory.id;
-      console.log('✅ Categoria encontrada:', { slug: slugTrimmed, name: foundCategory.name, id: categoria_id });
+      logger.info({ slug: slugTrimmed, name: foundCategory.name, id: categoria_id }, 'Categoria encontrada');
     } else {
-      console.log('📋 Sem filtro de categoria - buscando TODOS os produtos');
+      logger.debug('Sem filtro de categoria - buscando TODOS os produtos');
     }
     
     let query = supabase.from('products').select('*');
@@ -86,7 +87,7 @@ export async function getAllProducts(req, res) {
     const cacheKey = getProductsCacheKey({ categoria_id, search, ids });
     const cached = await cacheGet(cacheKey);
     if (cached) {
-      console.log('📦 Retornando do cache:', cached.length, 'produtos com categoria_id:', categoria_id);
+      logger.debug({ count: cached.length, categoria_id }, 'Retornando produtos do cache');
       return res.json({ success: true, data: cached });
     }
 
@@ -120,10 +121,10 @@ export async function getAllProducts(req, res) {
 
     // ✅ IMPORTANTE: Aplicar filtro de categoria ANTES de buscar do banco
     if (categoria_id) {
-      console.log('🎯 Aplicando filtro: categoria_id =', categoria_id);
+      logger.debug({ categoria_id }, 'Aplicando filtro de categoria');
       query = query.eq('categoria_id', categoria_id);
     } else {
-      console.log('📋 Sem filtro de categoria - buscando TODOS os produtos');
+      logger.debug('Sem filtro de categoria - buscando TODOS os produtos');
     }
     
     // Sanitiza e valida busca
@@ -152,35 +153,35 @@ export async function getAllProducts(req, res) {
 
     const { data: products, error } = await query;
     if (error) {
-      console.error('❌ Erro ao buscar produtos:', error);
+      logger.error({ err: error }, 'Erro ao buscar produtos');
       return res.status(500).json(getErrorMessage(error, 'Erro ao buscar produtos'));
     }
 
-    console.log(`✅ Query retornou ${products?.length || 0} produtos do banco`);
+    logger.info({ count: products?.length || 0 }, 'Query retornou produtos do banco');
     
     // ✅ VALIDAÇÃO: Se filtrou por categoria, TODOS devem ter essa categoria
     if (categoria_id && products && products.length > 0) {
       const allCorrectCategory = products.every(p => p.categoria_id === categoria_id);
       if (!allCorrectCategory) {
-        console.error('❌ ERRO CRÍTICO: Banco retornou produtos de categorias diferentes!');
+        logger.error('ERRO CRÍTICO: Banco retornou produtos de categorias diferentes!');
       }
     }
     
 
     if (!products || products.length === 0) {
-      console.log('📭 Nenhum produto encontrado');
+      logger.info('Nenhum produto encontrado');
       return res.json({ success: true, data: [] });
     }
 
     // ✅ SIMPLIFICADO: images_urls já vem do banco, não precisa de join
-    console.log('✅ Produtos carregados com images_urls do banco');
+    logger.debug('Produtos carregados com images_urls do banco');
 
     const formattedProducts = toPublicProductList(products);
     await cacheSet(cacheKey, formattedProducts, PRODUCTS_LIST_TTL);
     await cacheAddToSet(PRODUCTS_LIST_KEYS_SET, cacheKey);
     res.json({ success: true, data: formattedProducts });
   } catch (error) {
-    console.error('Erro inesperado ao buscar produtos:', error);
+    logger.error({ err: error }, 'Erro inesperado ao buscar produtos');
     return res.status(500).json({ success: false, message: 'Erro ao buscar produtos', details: error.message });
   }
 }
@@ -214,7 +215,7 @@ export async function getProductById(req, res) {
       if (productError.code === 'PGRST116') {
         return res.status(404).json({ error: 'Produto não encontrado' });
       }
-      console.error('Erro ao buscar produto:', productError);
+      logger.error({ err: productError }, 'Erro ao buscar produto');
       return res.status(500).json(getErrorMessage(productError, 'Erro ao buscar produto'));
     }
     
@@ -223,12 +224,12 @@ export async function getProductById(req, res) {
     }
 
     // ✅ SIMPLIFICADO: images_urls já vem do banco
-    console.log('✅ Produto carregado com images_urls do banco');
+    logger.debug('Produto carregado com images_urls do banco');
     const formattedProduct = toPublicProduct(product);
     await cacheSet(cacheKey, formattedProduct, PRODUCTS_DETAIL_TTL);
     res.json({ success: true, data: formattedProduct });
   } catch (error) {
-    console.error('Erro inesperado ao buscar produto:', error);
+    logger.error({ err: error }, 'Erro inesperado ao buscar produto');
     return res.status(500).json({ success: false, message: 'Erro ao buscar produto', details: error.message });
   }
 }
@@ -297,7 +298,7 @@ export async function updateProduct(req, res) {
       .single();
 
     if (error) {
-      console.error('Erro ao atualizar produto:', error);
+      logger.error({ err: error }, 'Erro ao atualizar produto');
       return res.status(500).json(getErrorMessage(error, 'Erro ao atualizar produto'));
     }
     
@@ -305,7 +306,7 @@ export async function updateProduct(req, res) {
     await invalidateProductListsCache();
     res.json(data);
   } catch (error) {
-    console.error('Erro inesperado ao atualizar produto:', error);
+    logger.error({ err: error }, 'Erro inesperado ao atualizar produto');
     return res.status(500).json(getErrorMessage(error, 'Erro ao atualizar produto'));
   }
 }
@@ -329,7 +330,7 @@ export async function deleteProduct(req, res) {
       .eq('id', id);
 
     if (error) {
-      console.error('Erro ao deletar produto:', error);
+      logger.error({ err: error }, 'Erro ao deletar produto');
       return res.status(500).json(getErrorMessage(error, 'Erro ao deletar produto'));
     }
     
@@ -337,7 +338,7 @@ export async function deleteProduct(req, res) {
     await invalidateProductListsCache();
     res.status(204).send();
   } catch (error) {
-    console.error('Erro inesperado ao deletar produto:', error);
+    logger.error({ err: error }, 'Erro inesperado ao deletar produto');
     return res.status(500).json(getErrorMessage(error, 'Erro ao deletar produto'));
   }
 }

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 
+import { logger } from '../utils/logger.js';
 dotenv.config();
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
@@ -22,12 +23,12 @@ export async function validateTurnstileToken(token, remoteip = null) {
   try {
     // Log para desenvolvimento
     if (isDevelopment) {
-      console.log('Validating Turnstile token:', {
+      logger.info({
         tokenLength: token?.length,
         hasSecretKey: !!TURNSTILE_SECRET_KEY,
         remoteip,
         environment: process.env.NODE_ENV
-      });
+      }, 'Validating Turnstile token');
     }
 
     // Validação básica do token
@@ -40,7 +41,7 @@ export async function validateTurnstileToken(token, remoteip = null) {
 
     // Validação da chave secreta
     if (!TURNSTILE_SECRET_KEY) {
-      console.error('TURNSTILE_SECRET_KEY não configurada');
+      logger.error('TURNSTILE_SECRET_KEY não configurada');
       return {
         success: false,
         error: 'Configuração do Turnstile não encontrada'
@@ -67,12 +68,12 @@ export async function validateTurnstileToken(token, remoteip = null) {
     const result = response.data;
 
     if (isDevelopment) {
-      console.log('Turnstile API response:', {
+      logger.info({
         success: result.success,
         challenge_ts: result.challenge_ts,
         hostname: result.hostname,
         errorCodes: result['error-codes']
-      });
+      }, 'Turnstile API response');
     }
 
     // Verificar resposta da API
@@ -104,10 +105,10 @@ export async function validateTurnstileToken(token, remoteip = null) {
         .join(', ') || 'Falha na verificação de segurança';
 
       if (isDevelopment) {
-        console.error('Turnstile validation failed:', {
+        logger.error({ err: {
           errorCodes,
           errorMessage
-        });
+        } }, 'Turnstile validation failed');
       }
 
       return {
@@ -117,11 +118,11 @@ export async function validateTurnstileToken(token, remoteip = null) {
     }
 
   } catch (error) {
-    console.error('Erro ao validar token Turnstile:', {
+    logger.error({ err: {
       message: error.message,
       code: error.code,
       response: error.response?.data
-    });
+    } }, 'Erro ao validar token Turnstile');
 
     // Em produção, retorna erro genérico
     if (isProduction) {
@@ -178,7 +179,7 @@ export function turnstileMiddleware(required = true) {
       
       next();
     } catch (error) {
-      console.error('Erro no middleware Turnstile:', error.message);
+      logger.error({ err: error.message }, 'Erro no middleware Turnstile');
       
       return res.status(500).json({
         error: 'Erro interno na verificação de segurança',

@@ -1,7 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
-import { secureLog } from '../utils/securityUtils.js';
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+import supabase from '../services/supabaseClient.js';
+import { logger } from '../utils/logger.js';
 
 function formatCategoryNames(categories = []) {
   if (!Array.isArray(categories)) return [];
@@ -57,7 +55,7 @@ export async function validateCoupon(req, res) {
       .single();
 
     if (couponError || !coupon) {
-      secureLog('Coupon not found:', { code: normalizedCode, userId });
+      logger.info({ code: normalizedCode, userId }, 'Coupon not found:');
       return res.status(404).json({
         valid: false,
         error: 'Cupom inválido',
@@ -244,12 +242,12 @@ export async function validateCoupon(req, res) {
     // Arredondar para 2 casas decimais
     discountAmount = Math.round(discountAmount * 100) / 100;
 
-    secureLog('Coupon validated successfully:', { 
+    logger.info({ 
       code: normalizedCode, 
       userId, 
       discountAmount,
       scope: coupon.scope
-    });
+    }, 'Coupon validated successfully:');
 
     res.json({
       valid: true,
@@ -267,12 +265,12 @@ export async function validateCoupon(req, res) {
     });
 
   } catch (error) {
-    console.error('Error validating coupon:', error);
+    logger.error({ err: error }, 'Error validating coupon');
     
-    secureLog('Coupon validation failed:', { 
+    logger.info({ 
       userId: req.user?.id,
       error: error.message 
-    });
+    }, 'Coupon validation failed:');
 
     res.status(500).json({
       valid: false,
@@ -302,20 +300,20 @@ export async function registerCouponUsage(couponId, userId, orderId, discountApp
       });
 
     if (error) {
-      console.error('Error registering coupon usage:', error);
+      logger.error({ err: error }, 'Error registering coupon usage');
       throw error;
     }
 
-    secureLog('Coupon usage registered:', { 
+    logger.info({ 
       couponId, 
       userId, 
       orderId, 
       discountApplied 
-    });
+    }, 'Coupon usage registered:');
 
     return true;
   } catch (error) {
-    console.error('Error in registerCouponUsage:', error);
+    logger.error({ err: error }, 'Error in registerCouponUsage');
     return false;
   }
 }
@@ -345,7 +343,7 @@ export async function listActiveCoupons(req, res) {
     });
 
   } catch (error) {
-    console.error('Error listing active coupons:', error);
+    logger.error({ err: error }, 'Error listing active coupons');
     res.status(500).json({
       error: 'Erro ao listar cupons',
       message: 'Ocorreu um erro ao buscar cupons disponíveis'
@@ -400,7 +398,7 @@ export async function createCoupon(req, res) {
       throw error;
     }
 
-    secureLog('Coupon created:', { couponId: coupon.id, code: coupon.code, userId });
+    logger.info({ couponId: coupon.id, code: coupon.code, userId }, 'Coupon created:');
 
     res.status(201).json({
       message: 'Cupom criado com sucesso',
@@ -408,7 +406,7 @@ export async function createCoupon(req, res) {
     });
 
   } catch (error) {
-    console.error('Error creating coupon:', error);
+    logger.error({ err: error }, 'Error creating coupon');
     res.status(500).json({
       error: 'Erro ao criar cupom',
       message: 'Ocorreu um erro ao criar o cupom'
@@ -447,7 +445,7 @@ export async function updateCoupon(req, res) {
       });
     }
 
-    secureLog('Coupon updated:', { couponId: id, userId });
+    logger.info({ couponId: id, userId }, 'Coupon updated:');
 
     res.json({
       message: 'Cupom atualizado com sucesso',
@@ -455,7 +453,7 @@ export async function updateCoupon(req, res) {
     });
 
   } catch (error) {
-    console.error('Error updating coupon:', error);
+    logger.error({ err: error }, 'Error updating coupon');
     res.status(500).json({
       error: 'Erro ao atualizar cupom',
       message: 'Ocorreu um erro ao atualizar o cupom'
@@ -480,14 +478,14 @@ export async function deleteCoupon(req, res) {
       throw error;
     }
 
-    secureLog('Coupon deleted:', { couponId: id, userId });
+    logger.info({ couponId: id, userId }, 'Coupon deleted:');
 
     res.json({
       message: 'Cupom deletado com sucesso'
     });
 
   } catch (error) {
-    console.error('Error deleting coupon:', error);
+    logger.error({ err: error }, 'Error deleting coupon');
     res.status(500).json({
       error: 'Erro ao deletar cupom',
       message: 'Ocorreu um erro ao deletar o cupom'
@@ -522,7 +520,7 @@ export async function getUserCouponHistory(req, res) {
     });
 
   } catch (error) {
-    console.error('Error getting user coupon history:', error);
+    logger.error({ err: error }, 'Error getting user coupon history');
     res.status(500).json({
       error: 'Erro ao buscar histórico',
       message: 'Ocorreu um erro ao buscar seu histórico de cupons'

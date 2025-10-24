@@ -12,9 +12,9 @@ import {
   validatePositiveDecimal, 
   validatePositiveInteger,
   sanitizeString,
-  secureLog, 
   getErrorMessage 
 } from '../utils/securityUtils.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * AUTENTICAÇÃO OAUTH2
@@ -36,7 +36,7 @@ export async function initiateAuthorization(req, res) {
     
     const authUrl = melhorEnvioService.getAuthorizationUrl(state);
     
-    secureLog('MelhorEnvio authorization initiated', { userId });
+    logger.info({ userId }, 'MelhorEnvio authorization initiated');
     
     return res.json({ 
       success: true, 
@@ -44,7 +44,7 @@ export async function initiateAuthorization(req, res) {
       message: 'Redirecione o usuário para esta URL para autorizar o aplicativo'
     });
   } catch (error) {
-    console.error('Erro ao iniciar autorização:', error);
+    logger.error({ err: error }, 'Erro ao iniciar autorização');
     return res.status(500).json({ 
       error: 'Erro ao iniciar autorização',
       details: getErrorMessage(error)
@@ -92,13 +92,13 @@ export async function handleAuthCallback(req, res) {
       });
     }
     
-    secureLog('MelhorEnvio authorization completed', { userId });
+    logger.info({ userId }, 'MelhorEnvio authorization completed');
     
     // Redireciona para página de sucesso no frontend
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     return res.redirect(`${frontendUrl}/profile/shipping?auth=success`);
   } catch (error) {
-    console.error('Erro no callback de autorização:', error);
+    logger.error({ err: error }, 'Erro no callback de autorização');
     return res.status(500).json({ 
       error: 'Erro ao processar autorização',
       details: getErrorMessage(error)
@@ -147,7 +147,7 @@ export async function checkAuthStatus(req, res) {
       authorizedSince: token.created_at
     });
   } catch (error) {
-    console.error('Erro ao verificar status de autorização:', error);
+    logger.error({ err: error }, 'Erro ao verificar status de autorização');
     return res.status(500).json({ 
       error: 'Erro ao verificar autorização'
     });
@@ -211,7 +211,7 @@ export async function calculateShipping(req, res) {
       savedQuotes: result.savedQuotes
     });
   } catch (error) {
-    console.error('Erro ao calcular frete:', error);
+    logger.error({ err: error }, 'Erro ao calcular frete');
     return res.status(500).json({ 
       error: 'Erro ao calcular frete',
       details: getErrorMessage(error)
@@ -247,7 +247,7 @@ export async function listQuotes(req, res) {
     const { data, error } = await query;
     
     if (error) {
-      console.error('Erro ao listar cotações:', error);
+      logger.error({ err: error }, 'Erro ao listar cotações');
       return res.status(500).json({ 
         error: 'Erro ao listar cotações'
       });
@@ -255,7 +255,7 @@ export async function listQuotes(req, res) {
     
     return res.json(data || []);
   } catch (error) {
-    console.error('Erro ao listar cotações:', error);
+    logger.error({ err: error }, 'Erro ao listar cotações');
     return res.status(500).json({ 
       error: 'Erro ao listar cotações'
     });
@@ -347,7 +347,7 @@ export async function createLabel(req, res) {
       label: result.data
     });
   } catch (error) {
-    console.error('Erro ao criar etiqueta:', error);
+    logger.error({ err: error }, 'Erro ao criar etiqueta');
     return res.status(500).json({ 
       error: 'Erro ao criar etiqueta',
       details: getErrorMessage(error)
@@ -387,7 +387,7 @@ export async function listLabels(req, res) {
     const { data, error } = await query;
     
     if (error) {
-      console.error('Erro ao listar etiquetas:', error);
+      logger.error({ err: error }, 'Erro ao listar etiquetas');
       return res.status(500).json({ 
         error: 'Erro ao listar etiquetas'
       });
@@ -395,7 +395,7 @@ export async function listLabels(req, res) {
     
     return res.json(data || []);
   } catch (error) {
-    console.error('Erro ao listar etiquetas:', error);
+    logger.error({ err: error }, 'Erro ao listar etiquetas');
     return res.status(500).json({ 
       error: 'Erro ao listar etiquetas'
     });
@@ -443,7 +443,7 @@ export async function getLabelById(req, res) {
       events: events || []
     });
   } catch (error) {
-    console.error('Erro ao buscar etiqueta:', error);
+    logger.error({ err: error }, 'Erro ao buscar etiqueta');
     return res.status(500).json({ 
       error: 'Erro ao buscar etiqueta'
     });
@@ -508,7 +508,7 @@ export async function generateLabelById(req, res) {
       message: 'Etiqueta gerada com sucesso'
     });
   } catch (error) {
-    console.error('Erro ao gerar etiqueta:', error);
+    logger.error({ err: error }, 'Erro ao gerar etiqueta');
     return res.status(500).json({ 
       error: 'Erro ao gerar etiqueta'
     });
@@ -563,7 +563,7 @@ export async function printLabelById(req, res) {
       url: result.url
     });
   } catch (error) {
-    console.error('Erro ao imprimir etiqueta:', error);
+    logger.error({ err: error }, 'Erro ao imprimir etiqueta');
     return res.status(500).json({ 
       error: 'Erro ao imprimir etiqueta'
     });
@@ -626,7 +626,7 @@ export async function cancelLabelById(req, res) {
       message: 'Etiqueta cancelada com sucesso'
     });
   } catch (error) {
-    console.error('Erro ao cancelar etiqueta:', error);
+    logger.error({ err: error }, 'Erro ao cancelar etiqueta');
     return res.status(500).json({ 
       error: 'Erro ao cancelar etiqueta'
     });
@@ -679,7 +679,7 @@ export async function trackShipment(req, res) {
       tracking: result.data
     });
   } catch (error) {
-    console.error('Erro ao rastrear envio:', error);
+    logger.error({ err: error }, 'Erro ao rastrear envio');
     return res.status(500).json({ 
       error: 'Erro ao rastrear envio'
     });
@@ -723,7 +723,7 @@ export async function listLabelEvents(req, res) {
       .order('created_at', { ascending: false });
     
     if (error) {
-      console.error('Erro ao listar eventos:', error);
+      logger.error({ err: error }, 'Erro ao listar eventos');
       return res.status(500).json({ 
         error: 'Erro ao listar eventos'
       });
@@ -731,7 +731,7 @@ export async function listLabelEvents(req, res) {
     
     return res.json(data || []);
   } catch (error) {
-    console.error('Erro ao listar eventos:', error);
+    logger.error({ err: error }, 'Erro ao listar eventos');
     return res.status(500).json({ 
       error: 'Erro ao listar eventos'
     });

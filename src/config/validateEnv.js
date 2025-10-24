@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
 
+import { logger } from '../utils/logger.js';
 // Carrega variáveis de ambiente ANTES de validar
 dotenv.config();
 
@@ -50,20 +51,20 @@ export function validateEnv() {
     
     // Log de sucesso (apenas em desenvolvimento)
     if (env.NODE_ENV === 'development') {
-      console.log('✅ Variáveis de ambiente validadas com sucesso');
+      logger.info('✅ Variáveis de ambiente validadas com sucesso');
     }
 
     return env;
   } catch (error) {
-    console.error('❌ Erro na validação de variáveis de ambiente:');
+    logger.error('❌ Erro na validação de variáveis de ambiente');
     
     if (error instanceof z.ZodError) {
       error.errors.forEach((err) => {
-        console.error(`  - ${err.path.join('.')}: ${err.message}`);
+        logger.error(`  - ${err.path.join('.')}: ${err.message}`);
       });
     }
 
-    console.error('\n📝 Verifique seu arquivo .env e tente novamente.\n');
+    logger.error('\n Verifique seu arquivo .env e tente novamente.\n');
     process.exit(1);
   }
 }
@@ -92,19 +93,19 @@ if (process.env.NODE_ENV === 'production') {
   });
 
   if (missingSecrets.length > 0) {
-    console.error('❌ ERRO CRÍTICO: Secrets obrigatórios ausentes em PRODUÇÃO:');
-    missingSecrets.forEach(key => console.error(`   - ${key}`));
+    logger.error('❌ ERRO CRÍTICO: Secrets obrigatórios ausentes em PRODUÇÃO');
+    missingSecrets.forEach(key => logger.error(`   - ${key}`));
     process.exit(1);
   }
 
   if (weakSecrets.length > 0) {
-    console.error('⚠️ AVISO: Secrets fracos em PRODUÇÃO:');
-    weakSecrets.forEach(msg => console.warn(`   - ${msg}`));
-    console.error('❌ PRODUÇÃO BLOQUEADA: Use secrets fortes!');
+    logger.error('⚠️ AVISO: Secrets fracos em PRODUÇÃO');
+    weakSecrets.forEach(msg => logger.warn(`   - ${msg}`));
+    logger.error('❌ PRODUÇÃO BLOQUEADA: Use secrets fortes!');
     process.exit(1);
   }
 
-  console.log('✅ Secrets de produção validados com sucesso');
+  logger.info('✅ Secrets de produção validados com sucesso');
 }
 
 /**
