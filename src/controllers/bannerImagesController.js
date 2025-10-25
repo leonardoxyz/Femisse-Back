@@ -4,10 +4,18 @@ import { logger } from '../utils/logger.js';
 
 export const getBannerImages = async (req, res) => {
   try {
-    const { data = [], error } = await supabase
+    const layoutParam = (req.query.layout || '').toString().trim().toLowerCase();
+
+    let query = supabase
       .from('banner_images')
       .select('*')
       .order('id', { ascending: true });
+
+    if (layoutParam) {
+      query = query.eq('target_layout', layoutParam);
+    }
+
+    const { data = [], error } = await query;
     
     if (error) throw error;
 
@@ -18,6 +26,7 @@ export const getBannerImages = async (req, res) => {
       data: banners,
     });
   } catch (error) {
+    logger.error('Erro ao buscar imagens do banner', error);
     res.status(500).json({
       success: false,
       message: 'Erro ao buscar imagens do banner',

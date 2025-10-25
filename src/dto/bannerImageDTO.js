@@ -15,6 +15,7 @@ const normalizeNumber = (value, defaultValue = null) => {
 
 const toPublicBannerImage = (banner) => ({
   url: banner.url,
+  target_layout: banner.target_layout
 });
 
 const toPublicBannerImageList = (banners = []) =>
