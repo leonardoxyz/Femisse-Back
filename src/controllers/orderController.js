@@ -3,6 +3,11 @@ import { validateUUID, validateLimit, getErrorMessage } from '../utils/securityU
 import { registerCouponUsage } from './couponController.js';
 import { toPublicOrderList } from '../dto/orderDTO.js';
 import * as orderService from '../services/orderService.js';
+import {
+  reserveProductVariantsStock,
+  restoreProductVariantsStock,
+  StockReservationError,
+} from '../services/productInventoryService.js';
 
 import { logger } from '../utils/logger.js';
 const normalizeShippingPayload = (shipping) => ({
@@ -231,34 +236,52 @@ export async function createOrder(req, res) {
       coupon_discount
     );
 
-    const orderData = {
-      user_id: userId,
-      status: 'pending',
-      payment_status: 'pending',
-      payment_method,
-      subtotal: calculatedSubtotal,
-      shipping_cost: shipping_cost || 0,
-      discount: discount || 0,
-      coupon_discount: coupon_discount || 0,
-      coupon_id: resolvedCouponId,
-      coupon_code: coupon_code || null,
-      total,
-      ...normalizeShippingPayload(shipping),
-      created_at: new Date().toISOString(),
-    };
+    let inventorySnapshots = [];
+    try {
+      const { snapshots } = await reserveProductVariantsStock(resolvedItems);
+      inventorySnapshots = snapshots;
 
-    const order = await orderService.createOrder(orderData);
+      const orderData = {
+        user_id: userId,
+        status: 'pending',
+        payment_status: 'pending',
+        payment_method,
+        subtotal: calculatedSubtotal,
+        shipping_cost: shipping_cost || 0,
+        discount: discount || 0,
+        coupon_discount: coupon_discount || 0,
+        coupon_id: resolvedCouponId,
+        coupon_code: coupon_code || null,
+        total,
+        ...normalizeShippingPayload(shipping),
+        created_at: new Date().toISOString(),
+      };
 
-    const orderItems = mapOrderItemsPayload(order.id, resolvedItems);
-    await orderService.createOrderItems(orderItems);
+      const order = await orderService.createOrder(orderData);
 
-    if (coupon_code) {
-      await registerCouponUsage(userId, coupon_code, order.id);
+      const orderItems = mapOrderItemsPayload(order.id, resolvedItems);
+      await orderService.createOrderItems(orderItems);
+
+      if (coupon_code) {
+        await registerCouponUsage(userId, coupon_code, order.id);
+      }
+
+      logger.info({ orderId: order.id, userId }, 'Order created:');
+      res.status(201).json({ success: true, data: order });
+    } catch (innerError) {
+      await restoreProductVariantsStock(inventorySnapshots);
+
+      if (innerError instanceof StockReservationError) {
+        logger.warn({ userId, err: innerError }, 'Falha ao reservar estoque para pedido');
+        return res.status(400).json({
+          error: innerError.message,
+          code: innerError.code,
+          details: innerError.details,
+        });
+      }
+
+      throw innerError;
     }
-
-    logger.info({ orderId: order.id, userId }, 'Order created:');
-    res.status(201).json({ success: true, data: order });
-
   } catch (error) {
     logger.info({ error: error.message }, 'Error creating order:');
     res.status(500).json(getErrorMessage(error, 'Erro ao criar pedido'));

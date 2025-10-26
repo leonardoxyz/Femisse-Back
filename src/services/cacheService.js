@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 const DEFAULT_TTL_SECONDS = 60;
 const localCache = new LRUCache({ max: 500, ttl: DEFAULT_TTL_SECONDS * 1000 });
 const localSets = new Map();
+const CACHE_ENABLED = process.env.ENABLE_CACHE === 'true';
 
 const toArray = (value) => {
   if (!value) return [];
@@ -13,6 +14,7 @@ const toArray = (value) => {
 };
 
 export const cacheGet = async (key) => {
+  if (!CACHE_ENABLED) return null;
   if (!key) return null;
   if (isRedisEnabled()) {
     const value = await redisClient.get(key);
@@ -28,6 +30,7 @@ export const cacheGet = async (key) => {
 };
 
 export const cacheSet = async (key, value, ttlSeconds = DEFAULT_TTL_SECONDS) => {
+  if (!CACHE_ENABLED) return;
   if (!key) return;
   if (isRedisEnabled()) {
     const payload = JSON.stringify(value);
@@ -38,17 +41,19 @@ export const cacheSet = async (key, value, ttlSeconds = DEFAULT_TTL_SECONDS) => 
 };
 
 export const cacheDelete = async (keys) => {
+  if (!CACHE_ENABLED) return;
   const entries = toArray(keys);
   if (entries.length === 0) return;
 
   if (isRedisEnabled()) {
-    await redisClient.del(entries);
+    await redisClient.del(...entries);
     return;
   }
   entries.forEach((key) => localCache.delete(key));
 };
 
 export const cacheAddToSet = async (setKey, members) => {
+  if (!CACHE_ENABLED) return;
   const values = toArray(members).filter(Boolean);
   if (values.length === 0) return;
 
@@ -63,6 +68,7 @@ export const cacheAddToSet = async (setKey, members) => {
 };
 
 export const cacheGetSetMembers = async (setKey) => {
+  if (!CACHE_ENABLED) return [];
   if (isRedisEnabled()) {
     return redisClient.smembers(setKey);
   }
@@ -70,6 +76,7 @@ export const cacheGetSetMembers = async (setKey) => {
 };
 
 export const cacheClearSet = async (setKey) => {
+  if (!CACHE_ENABLED) return;
   if (isRedisEnabled()) {
     await redisClient.del(setKey);
     return;
@@ -78,6 +85,7 @@ export const cacheClearSet = async (setKey) => {
 };
 
 export const cacheFlush = async () => {
+  if (!CACHE_ENABLED) return;
   if (isRedisEnabled()) {
     await redisClient.flushdb();
     return;

@@ -165,6 +165,11 @@ export async function processDirectPayment(req, res) {
       paymentPayload.payment_method_id = paymentData.payment_method === 'debit_card' ? 'debit_card' : 'credit_card';
     } else {
       paymentPayload.payment_method_id = paymentData.payment_method;
+
+      if (paymentData.payment_method === 'pix') {
+        const expirationDate = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        paymentPayload.date_of_expiration = expirationDate;
+      }
     }
 
     const payment = await mercadoPagoService.processPayment(paymentPayload, order.id);

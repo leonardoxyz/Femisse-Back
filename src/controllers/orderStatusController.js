@@ -30,7 +30,7 @@ export async function updateOrderStatus(req, res) {
     }
 
     // Validar payment_status
-    const validPaymentStatuses = ['pending', 'paid', 'failed', 'refunded'];
+    const validPaymentStatuses = ['pending', 'paid', 'failed', 'refunded', 'cancelled', 'expired'];
     if (payment_status && !validPaymentStatuses.includes(payment_status)) {
       return res.status(400).json({ 
         error: 'Status de pagamento inválido',

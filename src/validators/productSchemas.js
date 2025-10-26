@@ -39,6 +39,41 @@ const booleanField = z
   ])
   .optional();
 
+const nonNegativeIntegerField = z
+  .union([
+    z.number(),
+    z
+      .string()
+      .trim()
+      .regex(/^\d+$/, 'Estoque deve ser um número inteiro não negativo')
+      .transform((value) => Number(value)),
+  ])
+  .transform((value) => {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+      throw new Error('Estoque deve ser um número inteiro não negativo');
+    }
+    return parsed;
+  });
+
+const variantSizeSchema = z.object({
+  size: z.string().trim().min(1, 'Tamanho é obrigatório'),
+  stock: nonNegativeIntegerField,
+  price: optionalNumericField,
+});
+
+const variantSchema = z
+  .object({
+    color: z.union([z.string().trim().min(1), z.null()]).optional(),
+    image: z.string().trim().min(1).optional(),
+    sizes: z.array(variantSizeSchema).min(1, 'Informe ao menos um tamanho para a variante'),
+  })
+  .transform((value) => ({
+    color: value.color === undefined ? null : value.color,
+    image: value.image ?? null,
+    sizes: value.sizes,
+  }));
+
 const stringArrayField = z
   .array(z.string().trim().min(1))
   .optional()
@@ -53,10 +88,8 @@ const productBaseSchema = z.object({
   images: stringArrayField,
   badge: z.string().trim().optional(),
   badge_variant: z.string().trim().optional(),
-  sizes: stringArrayField,
-  colors: stringArrayField,
+  variants: z.array(variantSchema).optional().transform((value) => value ?? []),
   image_ids: z.array(z.string().trim().min(1)).optional(),
-  in_stock: booleanField,
 });
 
 export const productCreateSchema = productBaseSchema;

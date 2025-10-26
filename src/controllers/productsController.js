@@ -244,28 +244,28 @@ export async function createProduct(req, res) {
     images,
     badge,
     badge_variant,
-    sizes,
-    colors,
     image_ids,
-    in_stock
+    variants
   } = req.validatedBody ?? req.body;
+
+  const payload = {
+    name,
+    description,
+    price,
+    original_price,
+    image,
+    images,
+    badge,
+    badge_variant,
+    image_ids,
+    variants,
+  };
 
   const { data, error } = await supabase
     .from('products')
     .insert([
       {
-        name,
-        description,
-        price,
-        original_price,
-        image,
-        images,
-        badge,
-        badge_variant,
-        sizes,
-        colors,
-        image_ids,
-        in_stock
+        ...payload
       }
     ])
     .select()
@@ -290,9 +290,12 @@ export async function updateProduct(req, res) {
       });
     }
 
+    const { stock: _ignoredStock, ...sanitizedFields } = fields ?? {};
+    const updatePayload = { ...sanitizedFields };
+
     const { data, error } = await supabase
       .from('products')
-      .update(fields)
+      .update(updatePayload)
       .eq('id', id)
       .select()
       .single();

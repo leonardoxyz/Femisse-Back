@@ -32,6 +32,8 @@ export const paymentStatusEnum = z.enum([
   'paid',
   'failed',
   'refunded',
+  'cancelled',
+  'expired',
 ]);
 
 export const orderItemSchema = z

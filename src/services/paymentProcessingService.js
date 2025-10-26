@@ -1,6 +1,9 @@
 import supabase from './supabaseClient.js';
 import { getErrorMessage } from '../utils/securityUtils.js';
 import { logger } from '../utils/logger.js';
+import {
+  releaseProductVariantsStock,
+} from './productInventoryService.js';
 /**
  * Verifica se já existe pagamento aprovado para um pedido
  */
@@ -89,7 +92,15 @@ export async function savePaymentData(paymentData) {
  * Atualiza status do pedido baseado no pagamento
  */
 export async function updateOrderStatus(orderId, paymentStatus) {
-  let orderStatus = 'pending';
+  const cancellationStatuses = new Set(['cancelled', 'failed', 'expired']);
+
+  const { data: existingOrder } = await supabase
+    .from('orders')
+    .select('status, payment_status')
+    .eq('id', orderId)
+    .single();
+
+  let orderStatus = existingOrder?.status ?? 'pending';
   let paymentStatusMapped = paymentStatus;
 
   if (paymentStatus === 'approved') {
@@ -97,8 +108,12 @@ export async function updateOrderStatus(orderId, paymentStatus) {
     paymentStatusMapped = 'paid';
   } else if (paymentStatus === 'rejected') {
     paymentStatusMapped = 'failed';
+    orderStatus = 'cancelled';
   } else if (paymentStatus === 'cancelled') {
     paymentStatusMapped = 'cancelled';
+    orderStatus = 'cancelled';
+  } else if (paymentStatus === 'expired') {
+    paymentStatusMapped = 'expired';
     orderStatus = 'cancelled';
   }
 
@@ -110,6 +125,19 @@ export async function updateOrderStatus(orderId, paymentStatus) {
       updated_at: new Date().toISOString()
     })
     .eq('id', orderId);
+
+  const previousPaymentStatus = existingOrder?.payment_status ?? null;
+  const transitionedToCancellation = !cancellationStatuses.has(previousPaymentStatus ?? '')
+    && cancellationStatuses.has(paymentStatusMapped);
+
+  if (transitionedToCancellation) {
+    try {
+      const orderItems = await getOrderItems(orderId);
+      await releaseProductVariantsStock(orderItems);
+    } catch (error) {
+      logger.error({ err: error, orderId }, 'Erro ao restaurar estoque ao cancelar pedido');
+    }
+  }
 
   return { orderStatus, paymentStatus: paymentStatusMapped };
 }
