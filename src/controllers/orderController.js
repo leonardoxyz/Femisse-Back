@@ -34,6 +34,47 @@ const mapOrderItemsPayload = (orderId, items) =>
     variant_color: item.variant_color ?? null,
   }));
 
+function normalizeComparable(value) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.toLowerCase();
+}
+
+function resolveVariantUnitPrice(productRow, item, fallbackPrice) {
+  const variants = Array.isArray(productRow?.variants) ? productRow.variants : [];
+  if (variants.length === 0) {
+    return fallbackPrice;
+  }
+
+  const normalizedColor = normalizeComparable(item.variant_color);
+  const normalizedSize = normalizeComparable(item.variant_size);
+
+  const matchingVariant =
+    variants.find((variant) => {
+      const variantColorComparable = normalizeComparable(variant?.color);
+      if (normalizedColor) {
+        return variantColorComparable === normalizedColor;
+      }
+      return variantColorComparable === null;
+    }) || variants[0];
+
+  if (!matchingVariant) {
+    return fallbackPrice;
+  }
+
+  const sizes = Array.isArray(matchingVariant.sizes) ? matchingVariant.sizes : [];
+  const sizeEntry =
+    sizes.find((entry) => normalizeComparable(entry?.size) === normalizedSize) ||
+    sizes.find((entry) => normalizeComparable(entry?.size) === null);
+
+  if (sizeEntry && typeof sizeEntry.price === 'number' && Number.isFinite(sizeEntry.price)) {
+    return Number(sizeEntry.price);
+  }
+
+  return fallbackPrice;
+}
+
 export async function listOrders(req, res) {
   try {
     const limit = validateLimit(req.query.limit, 50);
@@ -179,7 +220,7 @@ export async function createOrder(req, res) {
         // Busca por slug no banco e usa preço/nome oficiais
         const { data: product, error: prodError } = await supabase
           .from('products')
-          .select('id, name, price, images_urls')
+          .select('id, name, price, variants, images_urls')
           .eq('slug', item.product_slug)
           .single();
 
@@ -189,18 +230,24 @@ export async function createOrder(req, res) {
 
         productId = product.id;
         productName = product.name;
-        unitPrice = Number(product.price);
+        const resolvedPrice = resolveVariantUnitPrice(product, item, Number(product.price));
+        unitPrice = Number.isFinite(resolvedPrice) && resolvedPrice > 0 ? resolvedPrice : Number(product.price);
       } else {
         // Mesmo com ID, por segurança revalida preço atual do banco
         const { data: product, error: prodError } = await supabase
           .from('products')
-          .select('id, name, price')
+          .select('id, name, price, variants')
           .eq('id', productId)
           .single();
         if (!prodError && product) {
           productName = product.name;
-          unitPrice = Number(product.price);
+          const resolvedPrice = resolveVariantUnitPrice(product, item, Number(product.price));
+          unitPrice = Number.isFinite(resolvedPrice) && resolvedPrice > 0 ? resolvedPrice : Number(product.price);
         }
+      }
+
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+        unitPrice = Number(item.unit_price) || 0;
       }
 
       resolvedItems.push({

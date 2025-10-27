@@ -1,5 +1,5 @@
 import supabase from '../services/supabaseClient.js';
-import { getErrorMessage } from '../utils/securityUtils.js';
+import { getErrorMessage, validateUUID } from '../utils/securityUtils.js';
 import * as mercadoPagoService from '../services/mercadoPagoService.js';
 import * as paymentProcessingService from '../services/paymentProcessingService.js';
 import { logger } from '../utils/logger.js';
@@ -110,10 +110,11 @@ export async function createPaymentPreference(req, res) {
 }
 
 export async function processDirectPayment(req, res) {
+  const paymentData = req.validatedPayment;
+  const order = req.orderData;
+  const userId = req.user.id;
+
   try {
-    const paymentData = req.validatedPayment;
-    const order = req.orderData;
-    const userId = req.user.id;
 
     logger.info({ order_id: order.id, userId, order_number: order.order_number }, 'Processing direct payment:');
 
@@ -206,10 +207,28 @@ export async function processDirectPayment(req, res) {
     res.status(201).json(responseData);
 
   } catch (error) {
-    logger.info({ error: error.message }, 'Direct payment processing failed:');
-    res.status(error.response?.status || 500).json({ 
+    logger.info({ error: error.message, order_id: order?.id, userId }, 'Direct payment processing failed:');
+
+    // Restaura status do pedido e estoque quando o pagamento falha
+    if (order?.id) {
+      try {
+        await paymentProcessingService.updateOrderStatus(order.id, 'rejected');
+      } catch (updateError) {
+        logger.error({ err: updateError, orderId: order.id }, 'Erro ao atualizar pedido após falha no pagamento');
+      }
+    }
+
+    const mpErrorData = error.response?.data;
+    const statusCode = error.response?.status || 500;
+    const detailsMessage = mpErrorData?.message 
+      || mpErrorData?.cause?.[0]?.description 
+      || mpErrorData?.error_description 
+      || error.message;
+
+    res.status(statusCode).json({ 
       error: 'Pagamento rejeitado',
-      details: error.message 
+      details: detailsMessage,
+      mp_status: mpErrorData?.status || mpErrorData?.error || null,
     });
   }
 }
@@ -282,9 +301,46 @@ export async function getPaymentStatus(req, res) {
   }
 }
 
+export async function getPendingPaymentByOrder(req, res) {
+  const { orderId } = req.params;
+  const userId = req.user.id;
+
+  const validation = validateUUID(orderId);
+  if (!validation.valid) {
+    return res.status(400).json({ error: validation.message });
+  }
+
+  try {
+    const payment = await paymentProcessingService.getUserPendingPaymentByOrder(orderId, userId);
+    if (!payment) {
+      return res.status(404).json({ error: 'Pagamento pendente não encontrado para este pedido' });
+    }
+
+    return res.json({
+      payment_id: payment.mp_payment_id,
+      status: payment.status,
+      payment_method: payment.payment_method,
+      amount: payment.amount,
+      pix: payment.mp_payment_data?.point_of_interaction?.transaction_data
+        ? {
+            qr_code: payment.mp_payment_data.point_of_interaction.transaction_data.qr_code,
+            qr_code_base64: payment.mp_payment_data.point_of_interaction.transaction_data.qr_code_base64,
+            ticket_url: payment.mp_payment_data.point_of_interaction.transaction_data.ticket_url,
+          }
+        : null,
+      created_at: payment.created_at,
+      expires_at: payment.mp_payment_data?.date_of_expiration ?? null,
+    });
+  } catch (error) {
+    logger.error({ err: error, orderId, userId }, 'Erro ao buscar pagamento pendente do pedido');
+    return res.status(500).json(getErrorMessage(error, 'Erro ao buscar pagamento pendente'));
+  }
+}
+
 export default {
   createPaymentPreference,
   processDirectPayment,
   handleWebhook,
-  getPaymentStatus
+  getPaymentStatus,
+  getPendingPaymentByOrder,
 };

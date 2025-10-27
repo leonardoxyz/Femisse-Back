@@ -194,3 +194,20 @@ export async function getUserPayment(paymentId, userId) {
 
   return payment;
 }
+
+export async function getUserPendingPaymentByOrder(orderId, userId) {
+  const { data: payment, error } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('order_id', orderId)
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error || !Array.isArray(payment) || payment.length === 0) {
+    return null;
+  }
+
+  return payment[0];
+}

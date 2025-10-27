@@ -10,7 +10,8 @@ import {
   createPaymentPreference, 
   processDirectPayment, 
   handleWebhook, 
-  getPaymentStatus 
+  getPaymentStatus,
+  getPendingPaymentByOrder,
 } from '../controllers/paymentController.js';
 import { validateRequest, schemas } from '../middleware/validationMiddleware.js';
 
@@ -43,6 +44,11 @@ router.post('/webhook', handleWebhook);
 router.get('/status/:payment_id',
   authenticateToken,
   getPaymentStatus
+);
+
+router.get('/order/:orderId/pending',
+  authenticateToken,
+  getPendingPaymentByOrder
 );
 
 // Rota para obter chave pública do MP (sem autenticação e sem rate limit)
