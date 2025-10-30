@@ -92,6 +92,44 @@ export const toShippingEventList = (events) => {
   return events.map(toShippingEvent);
 };
 
+export const toOrderTracking = (label, events = []) => {
+  if (!label) {
+    return null;
+  }
+
+  const safeEvents = Array.isArray(events) ? events : [];
+
+  return {
+    orderId: label.order_id,
+    labelId: label.id,
+    status: label.status,
+    trackingCode: label.tracking_code ?? null,
+    trackingUrl: label.tracking_url ?? null,
+    protocol: label.protocol ?? null,
+    serviceName: label.service_name ?? null,
+    companyName: label.company_name ?? null,
+    melhorEnvioOrderId: label.melhorenvio_order_id ?? null,
+    price: typeof label.price === 'number' ? label.price : null,
+    postedAt: label.posted_at ?? null,
+    deliveredAt: label.delivered_at ?? null,
+    createdAt: label.created_at ?? null,
+    updatedAt: label.updated_at ?? null,
+    lastUpdate: safeEvents.length > 0 ? safeEvents[0]?.created_at ?? null : label.updated_at ?? label.created_at ?? null,
+    events: safeEvents.map((event) => ({
+      id: event.id,
+      type: event.event_type,
+      status: event.status,
+      processed: event.processed ?? false,
+      processedAt: event.processed_at ?? null,
+      createdAt: event.created_at ?? null,
+      description: event.description ?? null,
+      location: event.location ?? null,
+      trackingCode: event.tracking_code ?? null,
+      errorMessage: event.error_message ?? null,
+    })),
+  };
+};
+
 /**
  * Formata status de autorização MelhorEnvio
  */

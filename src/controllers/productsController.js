@@ -234,11 +234,37 @@ export async function getProductById(req, res) {
   }
 }
 
+const deriveVariantPricing = (variants = []) => {
+  if (!Array.isArray(variants) || variants.length === 0) {
+    return { minPrice: 0, maxPrice: 0 };
+  }
+
+  const prices = [];
+
+  for (const variant of variants) {
+    const sizes = Array.isArray(variant?.sizes) ? variant.sizes : [];
+    for (const sizeEntry of sizes) {
+      const numericPrice = Number(sizeEntry?.price);
+      if (Number.isFinite(numericPrice) && numericPrice >= 0) {
+        prices.push(numericPrice);
+      }
+    }
+  }
+
+  if (prices.length === 0) {
+    return { minPrice: 0, maxPrice: 0 };
+  }
+
+  return {
+    minPrice: Math.min(...prices),
+    maxPrice: Math.max(...prices),
+  };
+};
+
 export async function createProduct(req, res) {
   const {
     name,
     description,
-    price,
     original_price,
     image,
     images,
@@ -248,10 +274,14 @@ export async function createProduct(req, res) {
     variants
   } = req.validatedBody ?? req.body;
 
+  const { minPrice, maxPrice } = deriveVariantPricing(variants);
+
   const payload = {
     name,
     description,
-    price,
+    price: minPrice,
+    price_min: minPrice,
+    price_max: maxPrice,
     original_price,
     image,
     images,
@@ -290,8 +320,19 @@ export async function updateProduct(req, res) {
       });
     }
 
-    const { stock: _ignoredStock, ...sanitizedFields } = fields ?? {};
-    const updatePayload = { ...sanitizedFields };
+    const { stock: _ignoredStock, price: _ignoredPrice, ...sanitizedFields } = fields ?? {};
+
+    let derivedPricing = {};
+    if (sanitizedFields.variants) {
+      const { minPrice, maxPrice } = deriveVariantPricing(sanitizedFields.variants);
+      derivedPricing = {
+        price: minPrice,
+        price_min: minPrice,
+        price_max: maxPrice,
+      };
+    }
+
+    const updatePayload = { ...sanitizedFields, ...derivedPricing };
 
     const { data, error } = await supabase
       .from('products')

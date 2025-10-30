@@ -159,7 +159,72 @@ export async function checkAuthStatus(req, res) {
  */
 
 /**
- * Calcula cotação de frete
+ * Estima frete público (sem autenticação)
+ * POST /api/shipping/estimate
+ * 
+ * Endpoint público para cálculo de frete na página de produto.
+ * Usa credenciais da loja (token fixo) ao invés do usuário.
+ */
+export async function estimateShippingPublic(req, res) {
+  try {
+    const payload = req.validatedBody ?? req.body;
+    
+    // Validações
+    if (!payload.toZipCode) {
+      return res.status(400).json({ 
+        error: 'CEP de destino é obrigatório'
+      });
+    }
+    
+    if (!payload.products || !Array.isArray(payload.products) || payload.products.length === 0) {
+      return res.status(400).json({ 
+        error: 'Produtos são obrigatórios para cotação'
+      });
+    }
+    
+    // Valida cada produto
+    for (const product of payload.products) {
+      if (!product.width || !product.height || !product.length || !product.weight) {
+        return res.status(400).json({ 
+          error: 'Todos os produtos devem ter dimensões (width, height, length, weight)'
+        });
+      }
+    }
+    
+    // CEP de origem padrão da loja
+    const fromZipCode = process.env.STORE_ZIP_CODE || '14870-390';
+    
+    // Usa método público que utiliza token fixo da loja
+    const result = await melhorEnvioService.calculateShippingPublic({
+      fromZipCode,
+      toZipCode: payload.toZipCode,
+      products: payload.products,
+      receipt: false,
+      ownHand: false,
+      collect: false
+    });
+    
+    if (!result.success) {
+      return res.status(400).json({ 
+        error: result.error
+      });
+    }
+    
+    return res.json({ 
+      success: true,
+      quotes: result.data
+    });
+  } catch (error) {
+    logger.error({ err: error }, 'Erro ao estimar frete público');
+    return res.status(500).json({ 
+      error: 'Erro ao calcular frete',
+      details: getErrorMessage(error)
+    });
+  }
+}
+
+/**
+ * Calcula cotação de frete (autenticado)
  * POST /api/shipping/calculate
  */
 export async function calculateShipping(req, res) {

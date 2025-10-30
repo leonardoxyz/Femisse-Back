@@ -94,12 +94,25 @@ const toPublicProduct = (product) => {
     availableColors,
   } = collectVariantMetadata(variants);
 
+  const variantPrices = variants.flatMap((variant) =>
+    variant.sizes
+      .map((sizeEntry) => sanitizeNumber(sizeEntry?.price, { fallback: null }))
+      .filter((price) => price !== null)
+  );
+
+  const fallbackPrice = sanitizeNumber(product.price);
+  const minPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : fallbackPrice;
+  const maxPrice = variantPrices.length > 0 ? Math.max(...variantPrices) : minPrice;
+
   return {
     id: product.id,
     name: product.name,
     description: product.description ?? null,
-    price: product.price,
+    price: minPrice,
+    priceMin: minPrice,
+    priceMax: maxPrice,
     originalPrice: product.original_price ?? null,
+    original_price: product.original_price ?? null,
     image: imagesList.length > 0 ? imagesList[0] : null,
     images: imagesList,
     badge: product.badge ?? null,

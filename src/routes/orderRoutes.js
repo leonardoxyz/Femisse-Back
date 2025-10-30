@@ -6,6 +6,7 @@ import {
   createOrder,
   updateOrder,
   deleteOrder,
+  getOrderTracking,
 } from '../controllers/orderController.js';
 import {
   updateOrderStatus,
@@ -45,6 +46,18 @@ router.patch(
   '/my/:orderId/status',
   authenticateToken,
   updateOrderStatus
+);
+
+router.get(
+  '/my/:orderId/tracking',
+  authenticateToken,
+  getOrderTracking
+);
+
+router.get(
+  '/:orderId/tracking',
+  authenticateToken,
+  getOrderTracking
 );
 
 // Rotas administrativas (PROTEGIDAS - listar todos os pedidos)

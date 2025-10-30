@@ -19,6 +19,35 @@ export const mercadoPagoPaymentSchema = z.object({
     .min(1, 'Token do cartão é obrigatório')
     .max(500, 'Token do cartão inválido')
     .optional(),
+
+  mp_payment_method_id: z.string()
+    .min(1, 'Método de pagamento do cartão inválido')
+    .max(100, 'Método de pagamento do cartão inválido')
+    .optional(),
+
+  mp_issuer_id: z.string()
+    .min(1, 'Banco emissor não identificado')
+    .max(100, 'Banco emissor inválido')
+    .optional(),
+
+  card_bin: z.string()
+    .regex(/^\d{6,8}$/u, 'BIN do cartão inválido')
+    .optional(),
+
+  card_brand: z.string()
+    .min(1)
+    .max(50)
+    .optional(),
+
+  mp_installment_amount: z.number()
+    .min(0)
+    .max(50000)
+    .optional(),
+
+  mp_installment_total_amount: z.number()
+    .min(0)
+    .max(50000)
+    .optional(),
   
   // Dados de parcelamento
   installments: z.number()
@@ -72,6 +101,26 @@ export const mercadoPagoPaymentSchema = z.object({
     order_number: z.string().min(1).max(50),
     platform: z.literal('feminisse-ecommerce')
   })
+}).superRefine((data, ctx) => {
+  if (data.payment_method === 'credit_card' || data.payment_method === 'debit_card') {
+    const addIssue = (path, message) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: Array.isArray(path) ? path : [path], message });
+
+    if (!data.card_token) {
+      addIssue('card_token', 'Token do cartão é obrigatório');
+    }
+
+    if (!data.mp_payment_method_id) {
+      addIssue('mp_payment_method_id', 'Método de pagamento do cartão não foi identificado');
+    }
+
+    if (!data.mp_issuer_id) {
+      addIssue('mp_issuer_id', 'Banco emissor do cartão não foi identificado');
+    }
+
+    if (!data.card_bin) {
+      addIssue('card_bin', 'BIN do cartão não foi informado');
+    }
+  }
 });
 
 // Middleware para validar dados de pagamento
@@ -118,6 +167,10 @@ const sanitizePaymentData = (data) => {
       last_name: sanitizeString(data.payer.last_name),
       email: sanitizeString(data.payer.email)
     },
+    mp_payment_method_id: data.mp_payment_method_id ? sanitizeString(data.mp_payment_method_id) : undefined,
+    mp_issuer_id: data.mp_issuer_id ? sanitizeString(data.mp_issuer_id) : undefined,
+    card_bin: data.card_bin ? sanitizeString(data.card_bin) : undefined,
+    card_brand: data.card_brand ? sanitizeString(data.card_brand) : undefined,
     shipping_address: data.shipping_address ? {
       ...data.shipping_address,
       street_name: sanitizeString(data.shipping_address.street_name),
@@ -125,7 +178,12 @@ const sanitizePaymentData = (data) => {
       city: sanitizeString(data.shipping_address.city),
       state: sanitizeString(data.shipping_address.state),
       neighborhood: sanitizeString(data.shipping_address.neighborhood)
-    } : undefined
+    } : undefined,
+    metadata: data.metadata ? {
+      user_id: sanitizeString(data.metadata.user_id),
+      order_number: sanitizeString(data.metadata.order_number),
+      platform: sanitizeString(data.metadata.platform)
+    } : data.metadata
   };
 };
 

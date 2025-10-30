@@ -7,6 +7,7 @@ import {
   initiateAuthorization,
   handleAuthCallback,
   checkAuthStatus,
+  estimateShippingPublic,
   calculateShipping,
   listQuotes,
   createLabel,
@@ -34,6 +35,12 @@ const quoteLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
   max: 20, // 20 cotações por minuto
   message: 'Muitas cotações em pouco tempo. Aguarde um momento.'
+});
+
+const publicQuoteLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 10, // 10 cotações públicas por minuto por IP
+  message: 'Muitas solicitações de frete. Aguarde um momento.'
 });
 
 const labelLimiter = rateLimit({
@@ -72,7 +79,26 @@ router.get('/auth/status', authenticateToken, checkAuthStatus);
 // =====================================================
 
 /**
- * Calcula cotação de frete
+ * Estima frete público (sem autenticação)
+ * POST /api/shipping/estimate
+ * 
+ * Body: {
+ *   toZipCode: string,
+ *   products: [{
+ *     id: string,
+ *     width: number,
+ *     height: number,
+ *     length: number,
+ *     weight: number,
+ *     insuranceValue?: number,
+ *     quantity?: number
+ *   }]
+ * }
+ */
+router.post('/estimate', publicQuoteLimiter, estimateShippingPublic);
+
+/**
+ * Calcula cotação de frete (autenticado)
  * POST /api/shipping/calculate
  * 
  * Body: {

@@ -163,7 +163,20 @@ export async function processDirectPayment(req, res) {
     if (paymentData.card_token && paymentData.payment_method !== 'pix') {
       paymentPayload.token = paymentData.card_token;
       paymentPayload.installments = paymentData.installments || 1;
-      paymentPayload.payment_method_id = paymentData.payment_method === 'debit_card' ? 'debit_card' : 'credit_card';
+      paymentPayload.payment_method_id = paymentData.mp_payment_method_id || paymentData.payment_method;
+      if (paymentData.mp_issuer_id) {
+        paymentPayload.issuer_id = paymentData.mp_issuer_id;
+      }
+      if (paymentData.mp_payment_type_id) {
+        paymentPayload.payment_type_id = paymentData.mp_payment_type_id;
+      }
+      paymentPayload.metadata = {
+        ...paymentPayload.metadata,
+        card_bin: paymentData.card_bin || null,
+        card_brand: paymentData.card_brand || null,
+        installment_amount: paymentData.mp_installment_amount || null,
+        installment_total_amount: paymentData.mp_installment_total_amount || null,
+      };
     } else {
       paymentPayload.payment_method_id = paymentData.payment_method;
 
@@ -172,6 +185,15 @@ export async function processDirectPayment(req, res) {
         paymentPayload.date_of_expiration = expirationDate;
       }
     }
+
+    logger.info({
+      order_id: order.id,
+      userId,
+      payment_method_id: paymentPayload.payment_method_id,
+      issuer_id: paymentPayload.issuer_id || null,
+      card_bin: paymentData.card_bin || null,
+      installments: paymentPayload.installments,
+    }, 'Mercado Pago payload metadata prepared');
 
     const payment = await mercadoPagoService.processPayment(paymentPayload, order.id);
 

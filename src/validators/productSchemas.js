@@ -59,7 +59,7 @@ const nonNegativeIntegerField = z
 const variantSizeSchema = z.object({
   size: z.string().trim().min(1, 'Tamanho é obrigatório'),
   stock: nonNegativeIntegerField,
-  price: optionalNumericField,
+  price: numericField,
 });
 
 const variantSchema = z
@@ -82,13 +82,12 @@ const stringArrayField = z
 const productBaseSchema = z.object({
   name: z.string().trim().min(1, 'Nome é obrigatório'),
   description: z.string().trim().max(5000).optional(),
-  price: numericField,
   original_price: optionalNumericField,
   image: z.string().trim().min(1, 'Imagem principal é obrigatória'),
   images: stringArrayField,
   badge: z.string().trim().optional(),
   badge_variant: z.string().trim().optional(),
-  variants: z.array(variantSchema).optional().transform((value) => value ?? []),
+  variants: z.array(variantSchema).min(1, 'Informe ao menos uma variante'),
   image_ids: z.array(z.string().trim().min(1)).optional(),
 });
 

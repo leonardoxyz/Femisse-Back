@@ -2,6 +2,7 @@ import supabase from '../services/supabaseClient.js';
 import { validateUUID, validateLimit, getErrorMessage } from '../utils/securityUtils.js';
 import { registerCouponUsage } from './couponController.js';
 import { toPublicOrderList } from '../dto/orderDTO.js';
+import { toOrderTracking } from '../dto/shippingDTO.js';
 import * as orderService from '../services/orderService.js';
 import {
   reserveProductVariantsStock,
@@ -102,6 +103,70 @@ export async function listOrders(req, res) {
   } catch (error) {
     logger.info({ error: error.message }, 'Error listing all orders:');
     res.status(500).json(getErrorMessage(error, 'Erro ao listar pedidos'));
+  }
+}
+
+export async function getOrderTracking(req, res) {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user?.id;
+
+    const validation = validateUUID(orderId);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.message });
+    }
+
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('id, user_id')
+      .eq('id', orderId)
+      .single();
+
+    if (orderError || !order) {
+      return res.status(404).json({ error: 'Pedido não encontrado' });
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Usuário não autenticado' });
+    }
+
+    if (order.user_id !== userId) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    const { data: label, error: labelError } = await supabase
+      .from('shipping_labels')
+      .select('*')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (labelError || !label) {
+      return res.status(404).json({ error: 'Etiqueta de envio não encontrada para este pedido' });
+    }
+
+    const { data: events, error: eventsError } = await supabase
+      .from('shipping_events')
+      .select('*')
+      .eq('shipping_label_id', label.id)
+      .order('created_at', { ascending: false });
+
+    if (eventsError) {
+      logger.error({ err: eventsError }, 'Erro ao carregar eventos de rastreamento');
+      return res.status(500).json({ error: 'Erro ao carregar eventos de rastreamento' });
+    }
+
+    const payload = toOrderTracking(label, events ?? []);
+
+    if (!payload) {
+      return res.status(500).json({ error: 'Não foi possível montar dados de rastreamento' });
+    }
+
+    return res.json({ success: true, data: payload });
+  } catch (error) {
+    logger.error({ err: error }, 'Erro ao buscar rastreamento do pedido');
+    return res.status(500).json(getErrorMessage(error, 'Erro ao buscar rastreamento'));
   }
 }
 

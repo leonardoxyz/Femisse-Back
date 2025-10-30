@@ -255,7 +255,74 @@ export const getValidToken = async (userId) => {
  */
 
 /**
- * Calcula cotação de frete
+ * Calcula cotação de frete público (sem autenticação de usuário)
+ * Usa token fixo da loja configurado em MELHORENVIO_ACCESS_TOKEN
+ */
+export const calculateShippingPublic = async (shippingData) => {
+  try {
+    // Verifica se há token fixo configurado
+    if (!process.env.MELHORENVIO_ACCESS_TOKEN) {
+      return {
+        success: false,
+        error: 'Cálculo de frete público não configurado. Configure MELHORENVIO_ACCESS_TOKEN.'
+      };
+    }
+
+    const api = createApiClient(process.env.MELHORENVIO_ACCESS_TOKEN);
+
+    // Monta payload da cotação
+    const payload = {
+      from: {
+        postal_code: shippingData.fromZipCode.replace(/\D/g, '')
+      },
+      to: {
+        postal_code: shippingData.toZipCode.replace(/\D/g, '')
+      },
+      products: shippingData.products.map(product => ({
+        id: product.id || String(Math.random()),
+        width: product.width,
+        height: product.height,
+        length: product.length,
+        weight: product.weight,
+        insurance_value: product.insuranceValue || product.price || 0,
+        quantity: product.quantity || 1
+      })),
+      options: {
+        receipt: shippingData.receipt || false,
+        own_hand: shippingData.ownHand || false,
+        collect: shippingData.collect || false
+      }
+    };
+
+    const response = await api.post('/me/shipment/calculate', payload);
+
+    // Filtra apenas cotações válidas (sem erro)
+    const validQuotes = response.data.filter(quote => !quote.error);
+
+    await logOperation('calculate_shipping_public', 'success', {
+      message: `${validQuotes.length} cotações válidas de ${response.data.length} calculadas (público)`,
+      request: payload,
+      response: { total: response.data.length, valid: validQuotes.length }
+    });
+
+    return { 
+      success: true, 
+      data: validQuotes
+    };
+  } catch (error) {
+    await logOperation('calculate_shipping_public', 'error', {
+      error: { message: error.message, response: error.response?.data }
+    });
+
+    return { 
+      success: false, 
+      error: getErrorMessage(error, 'Erro ao calcular frete') 
+    };
+  }
+};
+
+/**
+ * Calcula cotação de frete (autenticado)
  */
 export const calculateShipping = async (userId, shippingData) => {
   try {
@@ -639,7 +706,8 @@ export default {
   refreshAccessToken,
   getValidToken,
   
-  // Shipping
+  // Quotes
+  calculateShippingPublic,
   calculateShipping,
   createShippingLabel,
   generateLabel,
