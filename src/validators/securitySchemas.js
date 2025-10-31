@@ -43,21 +43,59 @@ export const searchQuerySchema = z.object({
   path: ['max_price']
 });
 
+const booleanQueryField = z
+  .union([z.boolean(), z.literal('true'), z.literal('false')])
+  .optional()
+  .transform((value) => {
+    if (value === undefined) return undefined;
+    if (typeof value === 'boolean') return value;
+    return value === 'true';
+  });
+
+const positiveIntegerQueryField = z
+  .union([
+    z.number().int().positive(),
+    z
+      .string()
+      .trim()
+      .regex(/^\d+$/, 'Valor deve ser um número inteiro positivo')
+      .transform((val) => Number.parseInt(val, 10)),
+  ])
+  .optional()
+  .transform((value) => {
+    if (value === undefined) return undefined;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+    return Math.min(parsed, 100);
+  });
+
 // Schema para validação de produtos query
-export const productsQuerySchema = z.object({
-  categoria_id: z.string()
-    .uuid('ID da categoria inválido')
-    .optional(),
-  
-  search: z.string()
-    .max(100, 'Busca deve ter no máximo 100 caracteres')
-    .optional()
-    .transform(val => val?.trim()),
-  
-  ids: z.string()
-    .max(1000, 'Lista de IDs muito longa')
-    .optional()
-}).passthrough(); // Permite outros campos sem validação estrita
+export const productsQuerySchema = z
+  .object({
+    categoria_id: z.string().uuid('ID da categoria inválido').optional(),
+    categoria_slug: z
+      .string()
+      .trim()
+      .max(100, 'Slug da categoria deve ter no máximo 100 caracteres')
+      .optional(),
+
+    search: z
+      .string()
+      .max(100, 'Busca deve ter no máximo 100 caracteres')
+      .optional()
+      .transform((val) => val?.trim()),
+
+    ids: z.string().max(1000, 'Lista de IDs muito longa').optional(),
+
+    is_new: booleanQueryField,
+    include_expired: booleanQueryField.transform((value) => value ?? false),
+    limit: positiveIntegerQueryField,
+    sort_by: z
+      .enum(['created_at', 'updated_at', 'name', 'price', 'new_until'])
+      .optional(),
+    sort_order: z.enum(['asc', 'desc']).optional(),
+  })
+  .passthrough(); // Permite outros campos sem validação estrita
 
 // Schema para validação de IDs UUID
 export const uuidParamsSchema = z.object({

@@ -1,7 +1,6 @@
 import supabase from '../services/supabaseClient.js';
 import { toPublicCategoryList } from '../dto/categoryDTO.js';
 import { cacheGet, cacheSet } from '../services/cacheService.js';
-import { logger } from '../utils/logger.js';
 
 const CATEGORIES_CACHE_KEY = 'cache:categories:all';
 const HOME_GRID_CACHE_KEY = 'cache:categories:home_grid';

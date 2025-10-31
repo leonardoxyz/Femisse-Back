@@ -40,6 +40,9 @@ const envSchema = z.object({
   // CORS
   FRONTEND_URL: z.string().url().default('http://localhost:8080'),
   CORS_ORIGINS: z.string().optional(),
+
+  // Google Safe Browsing
+  SAFE_BROWSING_API_KEY: z.string().optional(),
 });
 
 /**

@@ -125,6 +125,8 @@ const toPublicProduct = (product) => {
     stock,
     inStock: hasStock,
     categoriaId: product.categoria_id ?? null,
+    isNew: Boolean(product.is_new),
+    newUntil: product.new_until ?? null,
   };
 };
 

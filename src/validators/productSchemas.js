@@ -39,6 +39,33 @@ const booleanField = z
   ])
   .optional();
 
+const booleanOptionalField = booleanField.optional().transform((value) => {
+  if (value === undefined) return undefined;
+  return Boolean(value);
+});
+
+const isoDateField = z
+  .union([
+    z
+      .string()
+      .trim()
+      .refine((value) => {
+        if (value.length === 0) return true;
+        return !Number.isNaN(Date.parse(value));
+      }, 'Data inválida')
+      .transform((value) => {
+        if (value.length === 0) return null;
+        return new Date(value).toISOString();
+      }),
+    z.date().transform((value) => value.toISOString()),
+  ])
+  .optional()
+  .nullable()
+  .transform((value) => {
+    if (value === '') return null;
+    return value ?? null;
+  });
+
 const nonNegativeIntegerField = z
   .union([
     z.number(),
@@ -89,9 +116,20 @@ const productBaseSchema = z.object({
   badge_variant: z.string().trim().optional(),
   variants: z.array(variantSchema).min(1, 'Informe ao menos uma variante'),
   image_ids: z.array(z.string().trim().min(1)).optional(),
+  is_new: booleanOptionalField,
+  new_until: isoDateField,
 });
 
-export const productCreateSchema = productBaseSchema;
+export const productCreateSchema = productBaseSchema.superRefine((data, ctx) => {
+  const isNew = Boolean(data.is_new);
+  if (isNew && !data.new_until) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['new_until'],
+      message: 'Produtos marcados como novos exigem uma data limite (new_until).',
+    });
+  }
+});
 
 export const productUpdateSchema = productBaseSchema.partial().superRefine((data, ctx) => {
   if (Object.keys(data).length === 0) {
@@ -99,5 +137,23 @@ export const productUpdateSchema = productBaseSchema.partial().superRefine((data
       code: z.ZodIssueCode.custom,
       message: 'Pelo menos um campo deve ser fornecido para atualização',
     });
+  }
+
+  if (data.is_new !== undefined) {
+    const isNew = Boolean(data.is_new);
+    if (isNew && !data.new_until) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['new_until'],
+        message: 'Produtos marcados como novos exigem uma data limite (new_until).',
+      });
+    }
+    if (!isNew && data.new_until) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['new_until'],
+        message: 'Remova a data limite ou mantenha o produto como novo.',
+      });
+    }
   }
 });

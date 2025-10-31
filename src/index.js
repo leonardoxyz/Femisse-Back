@@ -36,6 +36,7 @@ import couponRoutes from './routes/couponRoutes.js';
 import shippingRoutes from './routes/shippingRoutes.js';
 import webhookRoutes from './routes/webhookRoutes.js';
 import testimonialRoutes from './routes/testimonialRoutes.js';
+import securityRoutes from './routes/securityRoutes.js';
 
 const app = express();
 const PORT = env.PORT || 4000;
@@ -189,6 +190,7 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/testimonials', testimonialRoutes);
+app.use('/api/security', securityRoutes);
 
 // ============================================
 // TRATAMENTO DE ERROS

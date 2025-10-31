@@ -21,8 +21,27 @@ const PRODUCTS_LIST_TTL = 120;
 const PRODUCTS_DETAIL_TTL = 300;
 
 const getProductsCacheKey = (query = {}) => {
-  const { categoria_id = null, search = null, ids = null } = query;
-  return JSON.stringify({ categoria_id, search, ids });
+  const {
+    categoria_id = null,
+    search = null,
+    ids = null,
+    is_new = undefined,
+    include_expired = false,
+    limit = null,
+    sort_by = null,
+    sort_order = null,
+  } = query;
+
+  return JSON.stringify({
+    categoria_id,
+    search,
+    ids,
+    is_new,
+    include_expired,
+    limit,
+    sort_by,
+    sort_order,
+  });
 };
 
 const getProductDetailCacheKey = (id) => `cache:products:detail:${id}`;
@@ -37,14 +56,38 @@ const invalidateProductListsCache = async () => {
 
 export async function getAllProducts(req, res) {
   try {
-    let { categoria_slug, search, ids } = req.validatedQuery || req.query;
+    let {
+      categoria_slug,
+      search,
+      ids,
+      is_new,
+      include_expired = false,
+      limit,
+      sort_by,
+      sort_order,
+    } = req.validatedQuery || req.query;
     let categoria_id = null;
-    
+
+    if (typeof is_new === 'string') {
+      is_new = is_new === 'true';
+    }
+
+    if (typeof include_expired === 'string') {
+      include_expired = include_expired === 'true';
+    }
+
+    if (typeof limit === 'string') {
+      const parsedLimit = Number.parseInt(limit, 10);
+      limit = Number.isFinite(parsedLimit) ? parsedLimit : undefined;
+    }
+
+    const includeExpired = include_expired === true;
+
     if (categoria_slug && typeof categoria_slug !== 'string') {
       categoria_slug = String(categoria_slug);
     }
-    
-    logger.info({ categoria_slug, search, ids }, 'getAllProducts chamado');
+
+    logger.info({ categoria_slug, search, ids, is_new, include_expired, limit, sort_by, sort_order }, 'getAllProducts chamado');
     
     // Se fornecido slug, busca o ID da categoria
     if (categoria_slug && categoria_slug.trim() !== '') {
@@ -83,8 +126,20 @@ export async function getAllProducts(req, res) {
     
     let query = supabase.from('products').select('*');
 
+    const effectiveSortBy = sort_by ?? (is_new ? 'new_until' : 'created_at');
+    const effectiveSortOrder = sort_order ?? 'desc';
+
     // Cria chave de cache com dados validados
-    const cacheKey = getProductsCacheKey({ categoria_id, search, ids });
+    const cacheKey = getProductsCacheKey({
+      categoria_id,
+      search,
+      ids,
+      is_new,
+      include_expired,
+      limit,
+      sort_by: effectiveSortBy,
+      sort_order: effectiveSortOrder,
+    });
     const cached = await cacheGet(cacheKey);
     if (cached) {
       logger.debug({ count: cached.length, categoria_id }, 'Retornando produtos do cache');
@@ -127,6 +182,19 @@ export async function getAllProducts(req, res) {
       logger.debug('Sem filtro de categoria - buscando TODOS os produtos');
     }
     
+    if (typeof is_new === 'boolean') {
+      query = query.eq('is_new', is_new);
+    }
+
+    if (is_new === true && !includeExpired) {
+      const nowIso = new Date().toISOString();
+      query = query.or(`new_until.is.null,new_until.gte.${nowIso}`);
+    }
+
+    if (limit) {
+      query = query.limit(limit);
+    }
+
     // Sanitiza e valida busca
     if (search && search.trim() !== "") {
       const sanitizedSearch = sanitizeString(search.trim());
@@ -150,6 +218,13 @@ export async function getAllProducts(req, res) {
       // Busca case-insensitive por nome ou descrição
       query = query.or(`name.ilike.%${sanitizedSearch}%,description.ilike.%${sanitizedSearch}%`);
     }
+
+    const orderOptions = { ascending: effectiveSortOrder === 'asc' };
+    if (effectiveSortBy === 'new_until') {
+      orderOptions.nullsFirst = false;
+    }
+
+    query = query.order(effectiveSortBy, orderOptions);
 
     const { data: products, error } = await query;
     if (error) {
@@ -271,10 +346,15 @@ export async function createProduct(req, res) {
     badge,
     badge_variant,
     image_ids,
-    variants
+    variants,
+    is_new,
+    new_until,
   } = req.validatedBody ?? req.body;
 
   const { minPrice, maxPrice } = deriveVariantPricing(variants);
+
+  const normalizedIsNew = Boolean(is_new);
+  const normalizedNewUntil = normalizedIsNew ? new_until ?? null : null;
 
   const payload = {
     name,
@@ -289,6 +369,8 @@ export async function createProduct(req, res) {
     badge_variant,
     image_ids,
     variants,
+    is_new: normalizedIsNew,
+    new_until: normalizedNewUntil,
   };
 
   const { data, error } = await supabase
@@ -333,6 +415,27 @@ export async function updateProduct(req, res) {
     }
 
     const updatePayload = { ...sanitizedFields, ...derivedPricing };
+
+    if (sanitizedFields.is_new !== undefined) {
+      updatePayload.is_new = Boolean(sanitizedFields.is_new);
+      if (!updatePayload.is_new) {
+        updatePayload.new_until = null;
+      } else if (sanitizedFields.new_until === undefined) {
+        // Preserve current new_until if not provided in update when product remains new
+        const { data: existingProduct, error: existingError } = await supabase
+          .from('products')
+          .select('new_until')
+          .eq('id', id)
+          .single();
+
+        if (existingError) {
+          logger.error({ err: existingError }, 'Erro ao buscar produto atual para manter new_until');
+          return res.status(500).json(getErrorMessage(existingError, 'Erro ao atualizar produto'));
+        }
+
+        updatePayload.new_until = existingProduct?.new_until ?? null;
+      }
+    }
 
     const { data, error } = await supabase
       .from('products')
