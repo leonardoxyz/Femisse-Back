@@ -3,6 +3,11 @@ import { getErrorMessage, validateUUID } from '../utils/securityUtils.js';
 import * as mercadoPagoService from '../services/mercadoPagoService.js';
 import * as paymentProcessingService from '../services/paymentProcessingService.js';
 import { logger } from '../utils/logger.js';
+import { env } from '../config/validateEnv.js';
+import { validateMercadoPagoWebhook } from '../services/webhookSecurityService.js';
+import { sanitizeMercadoPagoError, sanitizeErrorMessage } from '../utils/errorSanitizer.js';
+import { maskSensitiveData } from '../utils/dataMasking.js';
+import { getClientIp, getCloudflareMeta } from '../utils/requestUtils.js';
 export async function createPaymentPreference(req, res) {
   try {
     const paymentData = req.validatedPayment;
@@ -59,18 +64,18 @@ export async function createPaymentPreference(req, res) {
         }
       } : undefined,
       back_urls: {
-        success: `${process.env.FRONTEND_URL}/checkout/success`,
-        failure: `${process.env.FRONTEND_URL}/checkout/failure`,
-        pending: `${process.env.FRONTEND_URL}/checkout/pending`
+        success: `${env.FRONTEND_URL}/checkout/success`,
+        failure: `${env.FRONTEND_URL}/checkout/failure`,
+        pending: `${env.FRONTEND_URL}/checkout/pending`
       },
       auto_return: 'approved',
-      notification_url: `${process.env.BACKEND_URL}/api/payments/webhook`,
+      notification_url: env.BACKEND_URL ? `${env.BACKEND_URL}/api/payments/webhook` : undefined,
       external_reference: order.id,
       metadata: {
         user_id: userId,
         order_id: order.id,
         order_number: order.order_number || order.id.slice(-8),
-        platform: 'feminisse-ecommerce'
+        platform: 'Femisse-ecommerce'
       },
       expires: true,
       expiration_date_from: new Date().toISOString(),
@@ -157,7 +162,7 @@ export async function processDirectPayment(req, res) {
         coupon_discount: pricing.couponDiscount,
         coupon_code: order.coupon_code || null
       },
-      notification_url: process.env.BACKEND_URL ? `${process.env.BACKEND_URL}/api/payments/webhook` : undefined
+      notification_url: env.BACKEND_URL ? `${env.BACKEND_URL}/api/payments/webhook` : undefined
     };
 
     if (paymentData.card_token && paymentData.payment_method !== 'pix') {
@@ -229,7 +234,15 @@ export async function processDirectPayment(req, res) {
     res.status(201).json(responseData);
 
   } catch (error) {
-    logger.info({ error: error.message, order_id: order?.id, userId }, 'Direct payment processing failed:');
+    // 🔒 SEGURANÇA: Mascara dados sensíveis no log
+    const safeLogData = maskSensitiveData({
+      error: error.message,
+      order_id: order?.id,
+      userId,
+      status: error.response?.status,
+    });
+    
+    logger.info(safeLogData, 'Direct payment processing failed');
 
     // Restaura status do pedido e estoque quando o pagamento falha
     if (order?.id) {
@@ -240,26 +253,52 @@ export async function processDirectPayment(req, res) {
       }
     }
 
-    const mpErrorData = error.response?.data;
+    // 🔒 SEGURANÇA: Sanitiza erro do Mercado Pago
+    const sanitizedError = sanitizeMercadoPagoError(error);
     const statusCode = error.response?.status || 500;
-    const detailsMessage = mpErrorData?.message 
-      || mpErrorData?.cause?.[0]?.description 
-      || mpErrorData?.error_description 
-      || error.message;
 
     res.status(statusCode).json({ 
       error: 'Pagamento rejeitado',
-      details: detailsMessage,
-      mp_status: mpErrorData?.status || mpErrorData?.error || null,
+      message: sanitizedError.message,
     });
   }
 }
 
 export async function handleWebhook(req, res) {
   try {
-    const { type, data } = req.body;
+    const payload = req.body;
+    const headers = req.headers;
+    const sourceIP = getClientIp(req);
+    const cfMeta = getCloudflareMeta(req);
 
-    logger.info({ type, data_id: data?.id }, 'Webhook received:');
+    // 🔒 SEGURANÇA: Valida webhook do Mercado Pago
+    const validation = await validateMercadoPagoWebhook(payload, headers, sourceIP);
+    
+    if (!validation.valid) {
+      logger.warn({
+        ip: sourceIP,
+        cfRay: cfMeta.cfRay,
+        country: cfMeta.country,
+        error: validation.error,
+        type: payload?.type,
+      }, 'Webhook validation failed');
+      
+      // Retorna 401 para webhooks inválidos (não retentar)
+      return res.status(401).json({ 
+        error: 'Unauthorized',
+        message: validation.error 
+      });
+    }
+
+    const { type, data } = payload;
+
+    logger.info({ 
+      type, 
+      data_id: data?.id,
+      ip: sourceIP,
+      cfRay: cfMeta.cfRay,
+      country: cfMeta.country,
+    }, 'Webhook validated and received');
 
     if (type === 'payment' && data?.id) {
       const payment = await mercadoPagoService.getPaymentData(data.id);
@@ -270,7 +309,10 @@ export async function handleWebhook(req, res) {
 
   } catch (error) {
     logger.error({ err: error }, 'Webhook processing error');
-    res.status(500).json({ error: 'Webhook processing failed' });
+    
+    // 🔒 SEGURANÇA: Sanitiza erro antes de retornar
+    const safeMessage = sanitizeErrorMessage(error, 'Erro ao processar webhook');
+    res.status(500).json({ error: safeMessage });
   }
 }
 

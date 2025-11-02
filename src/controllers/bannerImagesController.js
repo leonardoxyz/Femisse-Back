@@ -9,7 +9,7 @@ export const getBannerImages = async (req, res) => {
     let query = supabase
       .from('banner_images')
       .select('*')
-      .order('id', { ascending: true });
+      .order('id', { ascending: true});
 
     if (layoutParam) {
       query = query.eq('target_layout', layoutParam);

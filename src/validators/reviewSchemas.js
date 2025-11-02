@@ -37,3 +37,18 @@ export const reviewUpdateSchema = reviewCreateSchema.partial().superRefine((valu
     }
   }
 });
+
+export const reviewListQuerySchema = z.object({
+  page: z.coerce
+    .number({ invalid_type_error: 'page deve ser um número' })
+    .int('page deve ser inteiro')
+    .min(1, 'page deve ser maior ou igual a 1')
+    .optional(),
+  pageSize: z.coerce
+    .number({ invalid_type_error: 'pageSize deve ser um número' })
+    .int('pageSize deve ser inteiro')
+    .min(1, 'pageSize deve ser no mínimo 1')
+    .max(50, 'pageSize deve ser no máximo 50')
+    .optional(),
+  sort: z.enum(['newest', 'oldest']).optional(),
+});

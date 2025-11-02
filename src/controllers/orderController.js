@@ -88,7 +88,7 @@ export async function listOrders(req, res) {
     } else {
       const { data, error } = await supabase
         .from('orders')
-        .select('*')
+        .select('id, order_number, user_id, status, payment_status, subtotal, shipping_cost, discount, total, payment_method, shipping_name, shipping_street, shipping_number, shipping_complement, shipping_neighborhood, shipping_city, shipping_state, shipping_zip_code, created_at, updated_at')
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
       
@@ -136,11 +136,11 @@ export async function getOrderTracking(req, res) {
 
     const { data: label, error: labelError } = await supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, order_id, melhorenvio_order_id, tracking_code, status, created_at')
       .eq('order_id', orderId)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (labelError || !label) {
       return res.status(404).json({ error: 'Etiqueta de envio não encontrada para este pedido' });
@@ -148,9 +148,9 @@ export async function getOrderTracking(req, res) {
 
     const { data: events, error: eventsError } = await supabase
       .from('shipping_events')
-      .select('*')
+      .select('id, shipping_label_id, event_type, description, location, occurred_at, created_at')
       .eq('shipping_label_id', label.id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false});
 
     if (eventsError) {
       logger.error({ err: eventsError }, 'Erro ao carregar eventos de rastreamento');
@@ -208,7 +208,7 @@ export async function getOrderById(req, res) {
 
     const { data: order, error } = await supabase
       .from('orders')
-      .select('*')
+      .select('id, order_number, user_id, status, payment_status, subtotal, shipping_cost, discount, total, payment_method, shipping_name, shipping_street, shipping_number, shipping_complement, shipping_neighborhood, shipping_city, shipping_state, shipping_zip_code, created_at, updated_at')
       .eq('id', id)
       .single();
 
@@ -227,8 +227,8 @@ export async function getOrderById(req, res) {
     res.json({ success: true, data: formattedOrder });
 
   } catch (error) {
-    logger.info({ error: error.message }, 'Error getting order:');
-    res.status(500).json(getErrorMessage(error, 'Erro ao buscar pedido'));
+    logger.error({ err: error }, 'Erro ao buscar pedido:');
+    res.status(500).json({ error: 'Erro ao buscar pedido', details: error.message });
   }
 }
 
@@ -413,7 +413,7 @@ export async function updateOrder(req, res) {
 
     const { data: order, error } = await supabase
       .from('orders')
-      .select('*')
+      .select('id, order_number, user_id, status, payment_status, subtotal, shipping_cost, discount, total, payment_method, shipping_name, shipping_street, shipping_number, shipping_complement, shipping_neighborhood, shipping_city, shipping_state, shipping_zip_code, created_at, updated_at')
       .eq('id', id)
       .single();
 
@@ -478,7 +478,7 @@ export async function deleteOrder(req, res) {
 
     const { data: order, error } = await supabase
       .from('orders')
-      .select('*')
+      .select('id, order_number, user_id, status, payment_status, subtotal, shipping_cost, discount, total, payment_method, shipping_name, shipping_street, shipping_number, shipping_complement, shipping_neighborhood, shipping_city, shipping_state, shipping_zip_code, created_at, updated_at')
       .eq('id', id)
       .single();
 

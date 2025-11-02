@@ -1,19 +1,21 @@
 import supabase from '../services/supabaseClient.js';
 import { logger } from '../utils/logger.js';
 import {
+  cacheAddToSet,
   cacheDelete,
   cacheGet,
+  cacheGetSetMembers,
   cacheSet,
+  cacheClearSet,
 } from '../services/cacheService.js';
 import { 
   validateUUID, 
   validateRating,
-  sanitizeString, 
-  getErrorMessage 
+  sanitizeString 
 } from '../utils/securityUtils.js';
-import { 
-  toPublicReviewList, 
-  toPublicReviewableProductList 
+import {
+  toPublicReviewList,
+  toPublicReviewableProductList
 } from '../dto/reviewDTO.js';
 
 const REVIEW_LIST_TTL = 120;
@@ -23,6 +25,9 @@ const PRODUCT_STATS_TTL = 300;
 const getUserReviewsCacheKey = (userId) => `cache:reviews:user:${userId}`;
 const getReviewableProductsCacheKey = (userId) => `cache:reviews:reviewable:${userId}`;
 const getProductStatsCacheKey = (productId) => `cache:reviews:stats:${productId}`;
+const getProductReviewCacheSetKey = (productId) => `cache:reviews:product:set:${productId}`;
+const getProductReviewListCacheKey = (productId, page, pageSize, sort) =>
+  `cache:reviews:product:${productId}:page:${page}:size:${pageSize}:sort:${sort}`;
 
 const resolvePrimaryImage = (imageUrls) => {
   if (!imageUrls) return null;
@@ -58,6 +63,19 @@ const invalidateUserReviewCaches = async (userId) => {
 
 const invalidateProductStatsCache = async (productId) => {
   await cacheDelete(getProductStatsCacheKey(productId));
+};
+
+const recordProductReviewCacheKey = async (productId, cacheKey) => {
+  await cacheAddToSet(getProductReviewCacheSetKey(productId), cacheKey);
+};
+
+const invalidateProductReviewListCache = async (productId) => {
+  const setKey = getProductReviewCacheSetKey(productId);
+  const keys = await cacheGetSetMembers(setKey);
+  if (keys && keys.length > 0) {
+    await cacheDelete(keys);
+  }
+  await cacheClearSet(setKey);
 };
 
 export async function listUserReviews(req, res) {
@@ -96,6 +114,7 @@ export async function listUserReviews(req, res) {
       reviewId: review.id,
       rating: review.rating,
       comment: review.comment,
+      productId: review.product_id,
       productName: review.products?.name ?? null,
       productImage: review.products?.images_urls ? resolvePrimaryImage(review.products.images_urls) : null,
       createdAt: review.created_at,
@@ -341,6 +360,7 @@ export async function createReview(req, res) {
 
     await invalidateUserReviewCaches(userId);
     await invalidateProductStatsCache(product_id);
+    await invalidateProductReviewListCache(product_id);
 
     return res.status(201).json({ 
       id: data.id, 
@@ -437,6 +457,7 @@ export async function updateReview(req, res) {
 
     await invalidateUserReviewCaches(userId);
     await invalidateProductStatsCache(data.product_id);
+    await invalidateProductReviewListCache(data.product_id);
 
     return res.json({ 
       id, 
@@ -483,12 +504,103 @@ export async function deleteReview(req, res) {
     await invalidateUserReviewCaches(userId);
     if (data?.product_id) {
       await invalidateProductStatsCache(data.product_id);
+      await invalidateProductReviewListCache(data.product_id);
     }
 
     return res.json({ message: 'Avaliação removida com sucesso' });
   } catch (error) {
     logger.error({ err: error }, 'Erro inesperado ao remover avaliação');
     return res.status(500).json({ error: 'Erro interno ao remover avaliação' });
+  }
+}
+
+export async function listProductReviews(req, res) {
+  try {
+    const { id: productId } = req.validatedParams ?? req.params;
+    const { page = 1, pageSize = 10, sort = 'newest' } = req.validatedQuery ?? req.query ?? {};
+
+    const cacheKey = getProductReviewListCacheKey(productId, page, pageSize, sort);
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    const pageNumber = Number(page) || 1;
+    const perPage = Number(pageSize) || 10;
+    const orderAscending = sort === 'oldest';
+    const from = (pageNumber - 1) * perPage;
+    const to = from + perPage - 1;
+
+    const { data, error, count } = await supabase
+      .from('product_reviews')
+      .select('id, user_id, product_id, rating, comment, created_at, updated_at', { count: 'exact' })
+      .eq('product_id', productId)
+      .order('created_at', { ascending: orderAscending })
+      .range(from, to);
+
+    if (error) {
+      logger.error({ err: error, productId }, 'Erro ao listar avaliações públicas do produto');
+      return res.status(500).json({ success: false, message: 'Erro ao listar avaliações', details: error.message });
+    }
+
+    const reviews = data ?? [];
+    const userIds = Array.from(new Set(reviews.map((review) => review.user_id).filter(Boolean)));
+    const userMap = new Map();
+
+    if (userIds.length > 0) {
+      const { data: usersData, error: usersError } = await supabase
+        .from('usuarios')
+        .select('id, nome')
+        .in('id', userIds);
+
+      if (usersError) {
+        logger.warn({ err: usersError }, 'Não foi possível buscar nomes de usuários para reviews');
+      } else {
+        usersData?.forEach((user) => {
+          if (user?.id) {
+            userMap.set(user.id, user.nome ?? null);
+          }
+        });
+      }
+    }
+
+    const rawReviews = reviews.map((review) => ({
+      reviewId: review.id,
+      rating: review.rating,
+      comment: review.comment,
+      createdAt: review.created_at,
+      updatedAt: review.updated_at ?? null,
+      userId: review.user_id,
+      userName: userMap.get(review.user_id) ?? null,
+      userDisplayName: userMap.get(review.user_id) ?? null,
+      productId: review.product_id,
+    }));
+
+    const formatted = toPublicReviewList(rawReviews);
+    const total = count ?? formatted.length;
+    const totalPages = Math.max(1, Math.ceil(total / perPage));
+    const meta = {
+      page: pageNumber,
+      pageSize: perPage,
+      total,
+      totalPages,
+      hasMore: pageNumber < totalPages,
+      sort,
+    };
+
+    const payload = {
+      success: true,
+      data: formatted,
+      meta,
+    };
+
+    await cacheSet(cacheKey, payload, REVIEW_LIST_TTL);
+    await recordProductReviewCacheKey(productId, cacheKey);
+
+    return res.json(payload);
+  } catch (error) {
+    logger.error({ err: error }, 'Erro inesperado ao listar avaliações do produto');
+    return res.status(500).json({ success: false, message: 'Erro interno ao listar avaliações do produto' });
   }
 }
 

@@ -27,17 +27,9 @@ export const CORS_ORIGINS = isDevelopment
       'http://localhost:8080',
     ]
   : [
-      'https://femisse-front.vercel.app',
-      'https://femisse.com',
+      'https://femisse.com.br',
+      'https://api.femisse.com.br',
     ];
-
-// Adiciona domínios específicos em produção
-if (isProduction) {
-  CORS_ORIGINS.push(
-    'https://femisse-front.vercel.app',
-    'https://femisse-back.vercel.app'
-  );
-}
 
 // Log das configurações (sem dados sensíveis)
 logger.info({

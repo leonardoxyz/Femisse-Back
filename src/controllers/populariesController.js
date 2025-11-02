@@ -35,7 +35,7 @@ export const getPopular = async (req, res) => {
         .from('products')
         .select('*')
         .range(offset, offset + limitNum - 1)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false});
 
       if (productsError) throw productsError;
 

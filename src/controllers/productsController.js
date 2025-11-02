@@ -309,6 +309,66 @@ export async function getProductById(req, res) {
   }
 }
 
+export async function getProductBySlug(req, res) {
+  try {
+    const { slug } = req.params;
+    
+    if (!slug || typeof slug !== 'string' || slug.trim().length === 0) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: 'Slug é obrigatório'
+      });
+    }
+
+    const normalizedSlug = generateSlug(slug.trim());
+    const cacheKey = `cache:products:slug:${normalizedSlug}`;
+    
+    // Tenta buscar do cache por slug
+    const cached = await cacheGet(cacheKey);
+    if (cached) {
+      logger.debug({ slug: normalizedSlug }, 'Produto encontrado no cache por slug');
+      return res.json({ success: true, data: cached });
+    }
+
+    // Tenta buscar lista de produtos do cache primeiro
+    const listCacheKey = getProductsCacheKey({});
+    let products = await cacheGet(listCacheKey);
+    
+    // Se não tem no cache, busca do banco
+    if (!products) {
+      logger.debug('Lista de produtos não encontrada no cache, buscando do banco');
+      const { data: productsData, error: productsError } = await supabase
+        .from('products')
+        .select('*');
+
+      if (productsError) {
+        logger.error({ err: productsError }, 'Erro ao buscar produtos');
+        return res.status(500).json(getErrorMessage(productsError, 'Erro ao buscar produto'));
+      }
+      products = productsData;
+    }
+
+    // Encontra produto pelo slug
+    const product = products.find(p => {
+      const productSlug = generateSlug(p.name);
+      return productSlug === normalizedSlug;
+    });
+
+    if (!product) {
+      logger.debug({ slug, normalizedSlug }, 'Produto não encontrado pelo slug');
+      return res.status(404).json({ error: 'Produto não encontrado' });
+    }
+
+    const formattedProduct = toPublicProduct(product);
+    await cacheSet(cacheKey, formattedProduct, PRODUCTS_DETAIL_TTL);
+    logger.debug({ productId: product.id, slug: normalizedSlug }, 'Produto encontrado e cacheado');
+    res.json({ success: true, data: formattedProduct });
+  } catch (error) {
+    logger.error({ err: error }, 'Erro inesperado ao buscar produto por slug');
+    return res.status(500).json({ success: false, message: 'Erro ao buscar produto', details: error.message });
+  }
+}
+
 const deriveVariantPricing = (variants = []) => {
   if (!Array.isArray(variants) || variants.length === 0) {
     return { minPrice: 0, maxPrice: 0 };

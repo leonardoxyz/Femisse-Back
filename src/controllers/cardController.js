@@ -5,7 +5,7 @@ export async function listCards(req, res) {
   try {
     const { usuario_id } = req.query;
 
-    let query = supabase.from('cartoes').select('*');
+    let query = supabase.from('cartoes').select('id, usuario_id, card_holder_name, card_last_four, card_brand, expiration_month, expiration_year, is_default, created_at');
     if (usuario_id) {
       query = query.eq('usuario_id', usuario_id);
     }
@@ -29,7 +29,7 @@ export async function getCardById(req, res) {
 
     const { data, error } = await supabase
       .from('cartoes')
-      .select('*')
+      .select('id, usuario_id, card_holder_name, card_last_four, card_brand, expiration_month, expiration_year, is_default, created_at')
       .eq('id', id)
       .single();
 

@@ -99,7 +99,7 @@ export const mercadoPagoPaymentSchema = z.object({
   metadata: z.object({
     user_id: z.string().uuid('ID do usuário inválido'),
     order_number: z.string().min(1).max(50),
-    platform: z.literal('feminisse-ecommerce')
+    platform: z.literal('Femisse-ecommerce')
   })
 }).superRefine((data, ctx) => {
   if (data.payment_method === 'credit_card' || data.payment_method === 'debit_card') {

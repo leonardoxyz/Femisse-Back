@@ -35,7 +35,7 @@ const createApiClient = (accessToken = null) => {
   const headers = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
-    'User-Agent': 'Feminisse/1.0'
+    'User-Agent': 'Femisse/1.0'
   };
 
   if (accessToken) {
@@ -493,7 +493,7 @@ export const createShippingLabel = async (userId, orderId, labelData) => {
         invoice: labelData.invoice ? {
           key: labelData.invoice.key
         } : undefined,
-        platform: labelData.platform || 'Feminisse',
+        platform: labelData.platform || 'Femisse',
         tags: labelData.tags || []
       }
     };

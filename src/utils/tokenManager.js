@@ -9,8 +9,8 @@ import { logger } from './logger.js';
 export function generateAccessToken(payload) {
   return jwt.sign(payload, env.JWT_SECRET, {
     expiresIn: '15m', // 15 minutos
-    issuer: 'feminisse-api',
-    audience: 'feminisse-app',
+    issuer: 'Femisse-api',
+    audience: 'Femisse-app',
   });
 }
 
@@ -25,8 +25,8 @@ export function generateRefreshToken(payload, rememberMe = false) {
   
   return jwt.sign(payload, refreshSecret, {
     expiresIn,
-    issuer: 'feminisse-api',
-    audience: 'feminisse-app',
+    issuer: 'Femisse-api',
+    audience: 'Femisse-app',
   });
 }
 
@@ -36,8 +36,8 @@ export function generateRefreshToken(payload, rememberMe = false) {
 export function verifyAccessToken(token) {
   try {
     return jwt.verify(token, env.JWT_SECRET, {
-      issuer: 'feminisse-api',
-      audience: 'feminisse-app',
+      issuer: 'Femisse-api',
+      audience: 'Femisse-app',
     });
   } catch (error) {
     throw error;
@@ -51,8 +51,8 @@ export function verifyRefreshToken(token) {
   try {
     const refreshSecret = env.JWT_REFRESH_SECRET || env.JWT_SECRET;
     return jwt.verify(token, refreshSecret, {
-      issuer: 'feminisse-api',
-      audience: 'feminisse-app',
+      issuer: 'Femisse-api',
+      audience: 'Femisse-app',
     });
   } catch (error) {
     throw error;

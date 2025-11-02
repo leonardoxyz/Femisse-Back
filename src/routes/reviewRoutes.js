@@ -5,14 +5,16 @@ import {
   createReview,
   updateReview,
   deleteReview,
+  listProductReviews,
   getProductReviewStats,
 } from '../controllers/reviewController.js';
-import { authenticateToken } from '../middleware/authMiddleware.js';
+import { authenticateToken, optionalAuth } from '../middleware/authMiddleware.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import {
   reviewCreateSchema,
   reviewUpdateSchema,
   reviewParamsSchema,
+  reviewListQuerySchema,
 } from '../validators/reviewSchemas.js';
 
 const router = express.Router();
@@ -70,6 +72,15 @@ router.get(
   '/products/:id/stats',
   validateRequest(reviewParamsSchema, 'params'),
   getProductReviewStats
+);
+
+// Lista pública de avaliações de um produto
+router.get(
+  '/products/:id',
+  optionalAuth,
+  validateRequest(reviewParamsSchema, 'params'),
+  validateRequest(reviewListQuerySchema, 'query'),
+  listProductReviews
 );
 
 export default router;

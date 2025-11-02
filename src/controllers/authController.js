@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import validator from 'validator';
 import { validateTurnstileToken } from '../utils/turnstile.js';
 import { logger, logSecurity } from '../utils/logger.js';
+import { getClientIp } from '../utils/requestUtils.js';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -26,7 +27,8 @@ import {
 } from '../utils/authValidation.js';
 
 export const register = asyncHandler(async (req, res) => {
-  logger.info({ ip: req.ip }, 'Tentativa de registro');
+  const clientIp = getClientIp(req);
+  logger.info({ ip: clientIp }, 'Tentativa de registro');
 
   let { nome, data_nascimento, cpf, telefone, email, senha, turnstileToken } = req.body;
 
@@ -38,11 +40,10 @@ export const register = asyncHandler(async (req, res) => {
     throw new ValidationError('Complete a verificação de segurança');
   }
 
-  const clientIP = req.ip || req.headers['x-forwarded-for'];
-  const turnstileValidation = await validateTurnstileToken(turnstileToken, clientIP);
+  const turnstileValidation = await validateTurnstileToken(turnstileToken, clientIp);
 
   if (!turnstileValidation.success) {
-    logSecurity('turnstile_failed', { ip: clientIP });
+    logSecurity('turnstile_failed', { ip: clientIp });
     throw new ValidationError(turnstileValidation.error || 'Verificação de segurança inválida');
   }
 
@@ -56,7 +57,8 @@ export const register = asyncHandler(async (req, res) => {
   if (telefone) validatePhone(telefone);
   if (data_nascimento) validateBirthDate(data_nascimento);
 
-  const senha_hash = await bcrypt.hash(senha, 12);
+  // 🔒 SEGURANÇA: 14 rounds recomendados para 2024 (mais seguro que 12)
+  const senha_hash = await bcrypt.hash(senha, 14);
 
   const userData = {
     nome,
@@ -85,17 +87,22 @@ export const register = asyncHandler(async (req, res) => {
 });
 
 export const login = asyncHandler(async (req, res) => {
-  logger.info({ ip: req.ip }, 'Tentativa de login');
+  const clientIp = getClientIp(req);
+  logger.info({ ip: clientIp }, 'Tentativa de login');
 
-  const { email, senha } = req.body;
+  let { email, senha } = req.body;
 
   if (!email || !senha) {
     throw new ValidationError('Email e senha são obrigatórios');
   }
 
+  email = sanitizeString(email);
+  validateEmail(email);
+  email = validator.normalizeEmail(email);
+
   const { data: user, error } = await supabase
     .from('usuarios')
-    .select('*')
+    .select('id, nome, email, senha_hash, cpf, telefone, data_nascimento')
     .eq('email', email)
     .single();
 
@@ -153,7 +160,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
   const { data: tokenData, error } = await supabase
     .from('refresh_tokens')
-    .select('*')
+    .select('id, user_id, token, expires_at, created_at')
     .eq('token', token)
     .single();
 
@@ -163,7 +170,7 @@ export const refreshToken = asyncHandler(async (req, res) => {
 
   const { data: user } = await supabase
     .from('usuarios')
-    .select('*')
+    .select('id, nome, email, cpf, telefone, data_nascimento')
     .eq('id', tokenData.user_id)
     .single();
 

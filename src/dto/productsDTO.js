@@ -124,7 +124,8 @@ const toPublicProduct = (product) => {
     availableColors,
     stock,
     inStock: hasStock,
-    categoriaId: product.categoria_id ?? null,
+    // 🔒 categoria_id removido - IDs internos não devem ser expostos
+    // TODO: Implementar categoria_slug para navegação
     isNew: Boolean(product.is_new),
     newUntil: product.new_until ?? null,
   };

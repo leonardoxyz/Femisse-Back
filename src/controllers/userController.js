@@ -7,7 +7,7 @@ import {
   validateName,
   validateUUID,
 } from '../utils/securityUtils.js';
-import { toPublicProfile } from '../dto/userDTO.js';
+import { toPublicProfile, toOwnerProfile } from '../dto/userDTO.js';
 import { logger } from '../utils/logger.js';
 import { env } from '../config/validateEnv.js';
 
@@ -18,7 +18,7 @@ export async function listUsers(req, res) {
   try {
     const { data, error } = await supabase
       .from('usuarios')
-      .select('*');
+      .select('id, nome, email, data_nascimento, cpf, telefone, created_at');
     
     if (error) throw error;
     res.json(data || []);
@@ -45,7 +45,7 @@ export async function getUserById(req, res) {
     
     const { data, error } = await supabase
       .from('usuarios')
-      .select('*')
+      .select('id, nome, email, data_nascimento, cpf, telefone, created_at')
       .eq('id', id)
       .single();
     
@@ -87,8 +87,8 @@ export async function getMyProfile(req, res) {
       throw error;
     }
     
-    // ✅ Usuário autenticado pode ver seus próprios dados sensíveis
-    const profile = toPublicProfile(data);
+    // ✅ Usuário autenticado vê seus próprios dados completos (não mascarados)
+    const profile = toOwnerProfile(data);
     logger.info({ userId }, 'Profile retrieved');
     res.status(200).json({ success: true, data: profile });
   } catch (err) {
@@ -298,8 +298,8 @@ export async function updateMyProfile(req, res) {
       throw error;
     }
 
-    // ✅ Usuário autenticado pode ver seus próprios dados atualizados
-    const profile = toPublicProfile(data);
+    // ✅ Usuário autenticado vê seus próprios dados completos (não mascarados)
+    const profile = toOwnerProfile(data);
     logger.info({ userId }, 'Profile updated');
     
     res.json({

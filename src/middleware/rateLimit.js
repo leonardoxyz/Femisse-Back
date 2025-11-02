@@ -16,6 +16,7 @@
 
 import rateLimit from 'express-rate-limit';
 import { logger } from '../utils/logger.js';
+import { getClientIp } from '../utils/requestUtils.js';
 
 /**
  * Factory function para criar rate limiters customizados
@@ -25,7 +26,7 @@ export const createRateLimit = (options = {}) => {
     windowMs = 15 * 60 * 1000, // 15 minutos
     max = 100,
     message = 'Muitas requisições',
-    keyGenerator = (req) => req.ip,
+    keyGenerator = (req) => getClientIp(req),
     skipSuccessfulRequests = false,
     skipFailedRequests = false,
   } = options;

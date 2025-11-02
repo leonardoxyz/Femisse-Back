@@ -8,8 +8,19 @@
 import supabase from '../services/supabaseClient.js';
 import melhorEnvioService from '../services/melhorEnvioService.js';
 import { sanitizeString } from '../utils/securityUtils.js';
-
 import { logger } from '../utils/logger.js';
+import { env } from '../config/validateEnv.js';
+import { validateMelhorEnvioWebhook } from '../services/webhookSecurityService.js';
+import { sanitizeErrorMessage } from '../utils/errorSanitizer.js';
+
+const {
+  SUPABASE_URL,
+  SUPABASE_KEY,
+  MELHOR_ENVIO_API_KEY,
+  MELHOR_ENVIO_API_SECRET,
+  MELHOR_ENVIO_API_URL,
+} = process.env;
+
 /**
  * Processa webhook do MelhorEnvio
  * POST /api/webhooks/melhorenvio
@@ -18,27 +29,29 @@ export async function handleMelhorEnvioWebhook(req, res) {
   try {
     const signature = req.headers['x-me-signature'];
     const payload = req.body;
+    const sourceIP = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
     
     logger.info({
       event: payload.event,
       orderId: payload.data?.id,
-      hasSignature: !!signature
+      hasSignature: !!signature,
+      ip: sourceIP
     }, 'MelhorEnvio webhook received');
     
-    // Valida assinatura do webhook
-    if (!signature) {
-      logger.warn('Webhook sem assinatura recebido');
-      return res.status(401).json({ 
-        error: 'Assinatura do webhook não fornecida' 
-      });
-    }
+    // 🔒 SEGURANÇA: Valida webhook completo (assinatura + IP + replay)
+    const validation = await validateMelhorEnvioWebhook(payload, signature, sourceIP);
     
-    const isValid = melhorEnvioService.validateWebhookSignature(payload, signature);
-    
-    if (!isValid) {
-      logger.warn('Webhook com assinatura inválida');
+    if (!validation.valid) {
+      logger.warn({
+        ip: sourceIP,
+        error: validation.error,
+        event: payload?.event,
+      }, 'MelhorEnvio webhook validation failed');
+      
+      // 🔒 SEGURANÇA: Retorna 401 definitivamente (não 200)
       return res.status(401).json({ 
-        error: 'Assinatura do webhook inválida' 
+        error: 'Unauthorized',
+        message: validation.error
       });
     }
     
@@ -54,7 +67,7 @@ export async function handleMelhorEnvioWebhook(req, res) {
     // Busca etiqueta no banco pelo melhorenvio_order_id
     const { data: label, error: labelError } = await supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, user_id, order_id, melhorenvio_order_id, tracking_code, status, created_at, updated_at')
       .eq('melhorenvio_order_id', data.id)
       .single();
     
@@ -150,10 +163,13 @@ export async function handleMelhorEnvioWebhook(req, res) {
   } catch (error) {
     logger.error({ err: error }, 'Erro ao processar webhook');
     
-    // Retorna 200 para não retentar em caso de erro interno
-    return res.status(200).json({ 
-      received: true,
-      error: 'Erro interno ao processar webhook'
+    // 🔒 SEGURANÇA: Sanitiza erro antes de retornar
+    const safeMessage = sanitizeErrorMessage(error, 'Erro ao processar webhook');
+    
+    // Retorna 500 (não 200) para erros internos
+    // Webhooks legítimos devem ser retentados
+    return res.status(500).json({ 
+      error: safeMessage
     });
   }
 }
@@ -291,7 +307,7 @@ async function processWebhookEvent(label, eventType, eventData, eventId) {
  * POST /api/webhooks/melhorenvio/test
  */
 export async function testWebhook(req, res) {
-  if (process.env.NODE_ENV === 'production') {
+  if (env.NODE_ENV === 'production') {
     return res.status(403).json({ 
       error: 'Endpoint de teste não disponível em produção' 
     });
@@ -309,7 +325,7 @@ export async function testWebhook(req, res) {
     // Busca etiqueta
     const { data: label, error } = await supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, user_id, order_id, melhorenvio_order_id, tracking_code, status, created_at, updated_at')
       .eq('id', labelId)
       .single();
     

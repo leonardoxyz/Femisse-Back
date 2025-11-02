@@ -2,6 +2,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 
 import { logger } from '../utils/logger.js';
+import { getClientIp } from './requestUtils.js';
 dotenv.config();
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
@@ -149,7 +150,7 @@ export function turnstileMiddleware(required = true) {
   return async (req, res, next) => {
     try {
       const { turnstileToken } = req.body;
-      const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+      const clientIP = getClientIp(req);
 
       // Se não é obrigatório e não foi fornecido, prossegue
       if (!required && !turnstileToken) {

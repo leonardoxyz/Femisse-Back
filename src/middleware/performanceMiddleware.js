@@ -84,7 +84,7 @@ export const performanceHeaders = (req, res, next) => {
   // Headers de performance
   res.set({
     'X-Response-Time': `${Date.now() - startTime}ms`,
-    'X-Powered-By': 'Feminisse API',
+    'X-Powered-By': 'Femisse API',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'X-XSS-Protection': '1; mode=block'

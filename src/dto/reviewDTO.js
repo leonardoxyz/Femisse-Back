@@ -1,20 +1,28 @@
+const getDisplayName = (rawName) => {
+  if (typeof rawName !== 'string') {
+    return null;
+  }
+
+  const trimmed = rawName.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const [firstName] = trimmed.split(/\s+/);
+  return firstName || trimmed;
+};
+
 const toPublicReview = (review) => {
-  const publicReview = {
-    reviewId: review.reviewId ?? review.id,
-    productName: review.productName ?? review.product_name ?? null,
-    productImage: review.productImage ?? review.product_image ?? null,
+  const rawName = review.userDisplayName ?? review.userName ?? review.user_name ?? review.nome ?? null;
+  const userName = getDisplayName(rawName) ?? 'Cliente Femisse';
+
+  return {
     rating: review.rating,
     comment: review.comment ?? null,
     createdAt: review.createdAt ?? review.created_at,
+    updatedAt: review.updatedAt ?? review.updated_at ?? null,
+    userName,
   };
-  
-  delete publicReview.productId;
-  delete publicReview.product_id;
-  delete publicReview.userId;
-  delete publicReview.user_id;
-  delete publicReview.id;
-  
-  return publicReview;
 };
 
 const toPublicReviewList = (reviews = []) =>

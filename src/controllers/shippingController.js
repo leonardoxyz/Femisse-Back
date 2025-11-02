@@ -15,6 +15,7 @@ import {
   getErrorMessage 
 } from '../utils/securityUtils.js';
 import { logger } from '../utils/logger.js';
+import { env } from '../config/validateEnv.js';
 
 /**
  * AUTENTICAÇÃO OAUTH2
@@ -95,7 +96,7 @@ export async function handleAuthCallback(req, res) {
     logger.info({ userId }, 'MelhorEnvio authorization completed');
     
     // Redireciona para página de sucesso no frontend
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendUrl = env.FRONTEND_URL;
     return res.redirect(`${frontendUrl}/profile/shipping?auth=success`);
   } catch (error) {
     logger.error({ err: error }, 'Erro no callback de autorização');
@@ -115,7 +116,7 @@ export async function checkAuthStatus(req, res) {
     const userId = req.user.id;
     
     // Se houver token fixo configurado, sempre retorna autorizado
-    if (process.env.MELHORENVIO_ACCESS_TOKEN) {
+    if (env.MELHORENVIO_ACCESS_TOKEN) {
       return res.json({ 
         authorized: true,
         mode: 'fixed_token',
@@ -192,7 +193,7 @@ export async function estimateShippingPublic(req, res) {
     }
     
     // CEP de origem padrão da loja
-    const fromZipCode = process.env.STORE_ZIP_CODE || '14870-390';
+    const fromZipCode = env.STORE_ZIP_CODE || '14870-390';
     
     // Usa método público que utiliza token fixo da loja
     const result = await melhorEnvioService.calculateShippingPublic({
@@ -295,9 +296,9 @@ export async function listQuotes(req, res) {
     
     let query = supabase
       .from('shipping_quotes')
-      .select('*')
+      .select('id, user_id, order_id, quote_data, created_at')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false});
     
     if (orderId) {
       const uuidValidation = validateUUID(orderId);
@@ -431,9 +432,9 @@ export async function listLabels(req, res) {
     
     let query = supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, user_id, order_id, melhorenvio_order_id, tracking_code, status, created_at')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false});
     
     if (orderId) {
       const uuidValidation = validateUUID(orderId);
@@ -485,23 +486,22 @@ export async function getLabelById(req, res) {
     
     const { data, error } = await supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, user_id, order_id, melhorenvio_order_id, tracking_code, status, created_at, updated_at')
       .eq('id', id)
       .eq('user_id', userId)
       .single();
-    
-    if (error || !data) {
-      return res.status(404).json({ 
-        error: 'Etiqueta não encontrada'
-      });
+
+    if (error) {
+      logger.error({ err: error }, 'Erro ao buscar etiqueta');
+      return res.status(500).json({ error: 'Erro ao buscar etiqueta' });
     }
-    
+
     // Busca eventos relacionados
     const { data: events } = await supabase
       .from('shipping_events')
-      .select('*')
+      .select('id, shipping_label_id, event_type, description, location, occurred_at, created_at')
       .eq('shipping_label_id', id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false});
     
     return res.json({
       ...data,
@@ -534,7 +534,7 @@ export async function generateLabelById(req, res) {
     // Busca etiqueta
     const { data: label, error } = await supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, user_id, order_id, melhorenvio_order_id, tracking_code, status, created_at, updated_at')
       .eq('id', id)
       .eq('user_id', userId)
       .single();
@@ -598,7 +598,7 @@ export async function printLabelById(req, res) {
     
     const { data: label, error } = await supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, user_id, order_id, melhorenvio_order_id, tracking_code, status, created_at, updated_at')
       .eq('id', id)
       .eq('user_id', userId)
       .single();
@@ -654,7 +654,7 @@ export async function cancelLabelById(req, res) {
     
     const { data: label, error } = await supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, user_id, order_id, melhorenvio_order_id, tracking_code, status, created_at, updated_at')
       .eq('id', id)
       .eq('user_id', userId)
       .single();
@@ -720,7 +720,7 @@ export async function trackShipment(req, res) {
     
     const { data: label, error } = await supabase
       .from('shipping_labels')
-      .select('*')
+      .select('id, user_id, order_id, melhorenvio_order_id, tracking_code, status, created_at, updated_at')
       .eq('id', id)
       .eq('user_id', userId)
       .single();
@@ -783,7 +783,7 @@ export async function listLabelEvents(req, res) {
     
     const { data, error } = await supabase
       .from('shipping_events')
-      .select('*')
+      .select('id, shipping_label_id, event_type, description, location, occurred_at, created_at')
       .eq('shipping_label_id', id)
       .order('created_at', { ascending: false });
     

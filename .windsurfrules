@@ -10,7 +10,7 @@
    Todas as explicações e logs devem ser objetivos, em **inglês técnico** e com foco em **ação e resultado** (sem mensagens genéricas).
 
 4. **Linguagem e Frameworks:**
-   O backend usa **Node.js**, **Express**, **TypeScript** e **Prisma** (ou ORM equivalente). A IA deve assumir esse stack como padrão salvo instrução contrária.
+   O backend usa **Node.js**, **Express**, **TypeScript** e **Supabase**. A IA deve assumir esse stack como padrão salvo instrução contrária.
 
 ---
 
@@ -80,7 +80,7 @@
 
 15. **Performance e Otimização:**
 
-    * Use consultas otimizadas (ex: `select` e `include` específicos no Prisma).
+    * Use consultas otimizadas (ex: `select` e `include` específicos no Supabase).
     * Evite loops desnecessários e operações síncronas bloqueantes.
     * Prefira sempre operações **assíncronas** e **lazy loading** quando aplicável.
 
@@ -166,7 +166,7 @@
 
 29. **Migrações e Banco de Dados:**
 
-    * Toda alteração de schema deve ter migração correspondente (`prisma migrate dev`).
+    * Toda alteração de schema deve ter migração correspondente supabase.
     * Nunca editar o banco manualmente.
 
 30. **Versionamento de API:**

@@ -19,7 +19,7 @@ export const getAllCategories = async (req, res) => {
     let query = supabase
       .from('categories')
       .select('*')
-      .order('name', { ascending: true });
+      .order('name', { ascending: true});
 
     if (homeGridOnly) {
       query = query.eq('show_in_home_grid', true);

@@ -17,6 +17,7 @@ import {
   securityLogger,
 } from './middleware/validationMiddleware.js';
 import { applySecurity } from './middleware/securityHeaders.js';
+import { csrfMiddleware, getCsrfToken, csrfErrorHandler } from './middleware/csrfMiddleware.js';
 
 // Importar rotas
 import addressRoutes from './routes/addressRoutes.js';
@@ -40,6 +41,9 @@ import securityRoutes from './routes/securityRoutes.js';
 
 const app = express();
 const PORT = env.PORT || 4000;
+
+// Express deve confiar em proxies (Cloudflare/Vercel) para obter IP real
+app.set('trust proxy', true);
 
 // Log de inicialização
 logger.info({
@@ -130,7 +134,7 @@ app.use(
     },
     credentials: true, // Importante para cookies
     exposedHeaders: ['set-cookie'], // Expõe header de cookies
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'], // Headers permitidos
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Skip-Auth-Refresh'], // Headers permitidos
   })
 );
 
@@ -145,6 +149,18 @@ app.use(cookieParser()); // Para ler cookies
 // LOGGING HTTP
 // ============================================
 app.use(httpLogger);
+
+// ============================================
+// CSRF PROTECTION
+// ============================================
+// Aplica CSRF protection (com exceções para webhooks)
+if (isProduction) {
+  app.use(csrfMiddleware);
+  logger.info('CSRF protection enabled');
+}
+
+// Endpoint para obter token CSRF (para SPAs)
+app.get('/api/csrf-token', getCsrfToken);
 
 // ============================================
 // HEALTH CHECK
@@ -197,6 +213,9 @@ app.use('/api/security', securityRoutes);
 // ============================================
 // 404 para rotas de API não encontradas
 app.use('/api/*', notFoundHandler);
+
+// Handler específico de erro CSRF
+app.use(csrfErrorHandler);
 
 // Middleware global de erro (DEVE SER O ÚLTIMO)
 app.use(errorHandler);

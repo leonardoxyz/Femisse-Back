@@ -7,7 +7,8 @@ const toPublicCategory = (category) => {
   return {
     slug,
     name: category.name,
-    image: category.image || null,
+    image: category.image,
+    banner_image: category.banner_image,
     showInHighlight: Boolean(category.show_in_highlight),
   };
 };

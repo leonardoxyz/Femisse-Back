@@ -7,7 +7,7 @@ export const getMomentProducts = async (req, res) => {
     const { data = [], error } = await supabase
       .from('moment_products')
       .select('*')
-      .order('id', { ascending: true });
+      .order('id', { ascending: true});
     
     if (error) throw error;
 

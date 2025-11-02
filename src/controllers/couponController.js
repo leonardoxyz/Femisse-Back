@@ -50,7 +50,7 @@ export async function validateCoupon(req, res) {
     // Buscar cupom no banco
     const { data: coupon, error: couponError } = await supabase
       .from('coupons')
-      .select('*')
+      .select('id, code, discount_type, discount_value, min_purchase_amount, max_uses, uses_count, user_limit, valid_from, valid_until, is_active, created_at')
       .ilike('code', normalizedCode)
       .single();
 
@@ -105,7 +105,7 @@ export async function validateCoupon(req, res) {
     // Verificar se usuário já usou o cupom (limite por usuário)
     const { data: userUsage, error: usageError } = await supabase
       .from('coupon_usage')
-      .select('*')
+      .select('id, coupon_id, user_id, used_at')
       .eq('coupon_id', coupon.id)
       .eq('user_id', userId);
 

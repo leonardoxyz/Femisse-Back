@@ -30,6 +30,17 @@ const envSchema = z.object({
   // Mercado Pago
   MERCADO_PAGO_ACCESS_TOKEN: z.string().optional(),
   MERCADO_PAGO_PUBLIC_KEY: z.string().optional(),
+  MERCADO_PAGO_WEBHOOK_SECRET: z.string().optional(),
+
+  // Melhor Envio OAuth2 / API
+  MELHORENVIO_CLIENT_ID: z.string().optional(),
+  MELHORENVIO_CLIENT_SECRET: z.string().optional(),
+  MELHORENVIO_REDIRECT_URI: z.string().url().optional(),
+  MELHORENVIO_SANDBOX: z.enum(['true', 'false']).optional(),
+  MELHORENVIO_ACCESS_TOKEN: z.string().optional(),
+  MELHOR_ENVIO_WEBHOOK_SECRET: z.string().optional(),
+  MELHOR_ENVIO_API_URL: z.string().url().optional(),
+  MELHOR_ENVIO_TOKEN: z.string().optional(),
 
   // Cloudflare Turnstile
   TURNSTILE_SECRET_KEY: z.string().optional(),
@@ -128,15 +139,15 @@ export const CORS_ORIGINS = isDevelopment
       'http://localhost:8080',
     ]
   : [
-      'https://femisse-front.vercel.app',
-      'https://femisse.com',
+      'https://femisse.com.br',
+      'https://api.femisse.com.br',
     ];
 
 // Adiciona domínios específicos em produção
 if (isProduction) {
   CORS_ORIGINS.push(
-    'https://femisse-front.vercel.app',
-    'https://femisse-back.vercel.app'
+    'https://femisse.com.br',
+    'https://api.femisse.com.br'
   );
 }
 
@@ -159,8 +170,17 @@ export default {
   REDIS_PASSWORD: env.REDIS_PASSWORD,
   MERCADO_PAGO_ACCESS_TOKEN: env.MERCADO_PAGO_ACCESS_TOKEN,
   MERCADO_PAGO_PUBLIC_KEY: env.MERCADO_PAGO_PUBLIC_KEY,
+  MERCADO_PAGO_WEBHOOK_SECRET: env.MERCADO_PAGO_WEBHOOK_SECRET,
   TURNSTILE_SECRET_KEY: env.TURNSTILE_SECRET_KEY,
   LOG_LEVEL: env.LOG_LEVEL,
   FRONTEND_URL: env.FRONTEND_URL,
   CORS_ORIGINS,
+  MELHORENVIO_CLIENT_ID: env.MELHORENVIO_CLIENT_ID,
+  MELHORENVIO_CLIENT_SECRET: env.MELHORENVIO_CLIENT_SECRET,
+  MELHORENVIO_REDIRECT_URI: env.MELHORENVIO_REDIRECT_URI,
+  MELHORENVIO_SANDBOX: env.MELHORENVIO_SANDBOX,
+  MELHORENVIO_ACCESS_TOKEN: env.MELHORENVIO_ACCESS_TOKEN,
+  MELHOR_ENVIO_WEBHOOK_SECRET: env.MELHOR_ENVIO_WEBHOOK_SECRET,
+  MELHOR_ENVIO_API_URL: env.MELHOR_ENVIO_API_URL,
+  MELHOR_ENVIO_TOKEN: env.MELHOR_ENVIO_TOKEN,
 };

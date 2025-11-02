@@ -14,7 +14,7 @@ const isProduction = env.NODE_ENV === 'production';
 export async function listAddresses(req, res) {
   try {
     const { usuario_id } = req.validatedQuery ?? req.query;
-    let query = supabase.from('address').select('*');
+    let query = supabase.from('address').select('id, usuario_id, label, zip_code, street, number, complement, neighborhood, city, state, is_default, created_at, updated_at');
     
     if (usuario_id) {
       query = query.eq('usuario_id', usuario_id);
@@ -37,7 +37,7 @@ export async function getAddressById(req, res) {
     
     const { data, error } = await supabase
       .from('address')
-      .select('*')
+      .select('id, usuario_id, label, zip_code, street, number, complement, neighborhood, city, state, is_default, created_at, updated_at')
       .eq('id', id)
       .single();
     
@@ -247,7 +247,7 @@ export async function listMyAddresses(req, res) {
     
     const { data = [], error } = await supabase
       .from('address')
-      .select('*')
+      .select('id, usuario_id, label, zip_code, street, number, complement, neighborhood, city, state, is_default, created_at, updated_at')
       .eq('usuario_id', usuario_id)
       .order('created_at', { ascending: false });
     

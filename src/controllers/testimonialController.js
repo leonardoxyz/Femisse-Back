@@ -12,7 +12,7 @@ const getAllTestimonials = async (req, res) => {
       .from('testimonials')
       .select('*')
       .eq('is_active', true)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false});
 
     if (error) {
       logger.error({ err: error }, 'Erro ao buscar testimonials');
