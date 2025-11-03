@@ -56,6 +56,12 @@ const envSchema = z.object({
   SAFE_BROWSING_API_KEY: z.string().optional(),
 });
 
+const parseOrigins = (value) =>
+  value
+    ?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean) ?? [];
+
 /**
  * Valida e exporta variáveis de ambiente
  */
@@ -132,7 +138,7 @@ export const isTest = env.NODE_ENV === 'test';
 /**
  * Configurações de CORS baseadas no ambiente
  */
-export const CORS_ORIGINS = isDevelopment 
+export const CORS_ORIGINS = (isDevelopment 
   ? [
       'http://localhost:3000',
       'http://localhost:5173',
@@ -141,7 +147,10 @@ export const CORS_ORIGINS = isDevelopment
   : [
       'https://femisse.com.br',
       'https://api.femisse.com.br',
-    ];
+      ...parseOrigins(env.FRONTEND_URL),
+      ...parseOrigins(env.CORS_ORIGINS),
+    ]
+).filter(Boolean);
 
 // Adiciona domínios específicos em produção
 if (isProduction) {

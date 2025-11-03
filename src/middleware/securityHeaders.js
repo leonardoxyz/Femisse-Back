@@ -17,6 +17,12 @@ function forceHTTPS(req, res, next) {
     return next();
   }
 
+  // Permite ambientes locais sem forçar HTTPS
+  const host = req.hostname || '';
+  if (host === 'localhost' || host === '127.0.0.1') {
+    return next();
+  }
+
   // Verifica se a requisição já é HTTPS
   const isHTTPS = 
     req.secure || 

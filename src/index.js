@@ -134,7 +134,7 @@ app.use(
     },
     credentials: true, // Importante para cookies
     exposedHeaders: ['set-cookie'], // Expõe header de cookies
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Skip-Auth-Refresh'], // Headers permitidos
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Skip-Auth-Refresh', 'X-CSRF-Token'], // Headers permitidos
   })
 );
 

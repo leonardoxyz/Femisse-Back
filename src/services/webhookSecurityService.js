@@ -162,19 +162,22 @@ export function validateMercadoPagoSignature(payload, headers) {
  */
 export async function validateMercadoPagoWebhook(payload, headers, sourceIP) {
   try {
-    // 1. Valida IP de origem
-    if (!isIPAllowed(sourceIP, MERCADO_PAGO_IPS)) {
+    // 1. Valida IP de origem (modo soft: apenas registra alerta)
+    const ipAllowed = isIPAllowed(sourceIP, MERCADO_PAGO_IPS);
+
+    if (!ipAllowed) {
       logSecurity('webhook_untrusted_ip', {
         provider: 'mercadopago',
-        ip: sourceIP
+        ip: sourceIP,
+        enforcement: 'soft',
       });
-      
-      // Em produção, bloqueia. Em dev, apenas alerta
-      if (env.NODE_ENV === 'production') {
-        return { valid: false, error: 'Untrusted IP address' };
-      }
+
+      logger.warn({
+        provider: 'mercadopago',
+        ip: sourceIP,
+      }, 'Mercado Pago webhook recebido de IP fora da lista de confiança');
     }
-    
+
     // 2. Valida assinatura HMAC
     const signatureValidation = validateMercadoPagoSignature(payload, headers);
     if (!signatureValidation.valid) {

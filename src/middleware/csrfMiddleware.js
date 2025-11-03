@@ -47,13 +47,18 @@ const CSRF_SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
  * @returns {boolean} true se deve ser excluída
  */
 function shouldSkipCSRF(req) {
+  // Rota de seed do CSRF SEMPRE deve passar pelo middleware
+  const path = req.path || req.url;
+  if (path === '/api/csrf-token') {
+    return false;
+  }
+
   // Métodos seguros não precisam de CSRF
   if (CSRF_SAFE_METHODS.includes(req.method)) {
     return true;
   }
-  
+
   // Verifica se está na lista de exclusões
-  const path = req.path || req.url;
   const isExcluded = CSRF_EXCLUDED_PATHS.some(pattern => pattern.test(path));
   
   if (isExcluded) {
@@ -69,28 +74,40 @@ function shouldSkipCSRF(req) {
 /**
  * Middleware CSRF com configuração customizada
  */
-const csrfProtection = csurf({
-  cookie: {
-    httpOnly: true,
-    secure: isProduction, // HTTPS apenas em produção
-    sameSite: isProduction ? 'strict' : 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 1000, // 1 hora
-  },
-  ignoreMethods: CSRF_SAFE_METHODS,
-  value: (req) => {
-    // Aceita token de múltiplas fontes (em ordem de prioridade):
-    // 1. Header X-CSRF-Token
-    // 2. Body _csrf
-    // 3. Query _csrf
-    return (
-      req.headers['x-csrf-token'] ||
-      req.headers['x-xsrf-token'] ||
-      req.body?._csrf ||
-      req.query?._csrf
-    );
-  },
-});
+const createCsrfProtection = (req) => {
+  const hostHeader = req.get('host') || req.hostname || '';
+  const normalizedHost = hostHeader.toLowerCase();
+  const isLocalHost =
+    normalizedHost.includes('localhost') ||
+    normalizedHost.includes('127.0.0.1') ||
+    normalizedHost.includes('::1');
+  const forwardedProto = req.get('x-forwarded-proto');
+  const protocol = forwardedProto || (req.secure ? 'https' : 'http');
+  const useSecureCookies = isProduction && protocol === 'https' && !isLocalHost;
+
+  return csurf({
+    cookie: {
+      httpOnly: true,
+      secure: useSecureCookies,
+      sameSite: useSecureCookies ? 'strict' : 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 1000, // 1 hora
+    },
+    ignoreMethods: CSRF_SAFE_METHODS,
+    value: (req) => {
+      // Aceita token de múltiplas fontes (em ordem de prioridade):
+      // 1. Header X-CSRF-Token
+      // 2. Body _csrf
+      // 3. Query _csrf
+      return (
+        req.headers['x-csrf-token'] ||
+        req.headers['x-xsrf-token'] ||
+        req.body?._csrf ||
+        req.query?._csrf
+      );
+    },
+  });
+};
 
 /**
  * Middleware wrapper que aplica CSRF com exceções
@@ -100,8 +117,10 @@ export function csrfMiddleware(req, res, next) {
   if (shouldSkipCSRF(req)) {
     return next();
   }
-  
+
   // Aplica proteção CSRF
+  const csrfProtection = createCsrfProtection(req);
+
   csrfProtection(req, res, (err) => {
     if (err) {
       // Loga tentativa de CSRF
@@ -139,10 +158,20 @@ export function csrfMiddleware(req, res, next) {
  * GET /api/csrf-token
  */
 export function getCsrfToken(req, res) {
-  res.json({
-    csrfToken: req.csrfToken(),
-    expiresIn: 3600, // 1 hora em segundos
-  });
+  try {
+    const token = req.csrfToken();
+
+    res.json({
+      csrfToken: token,
+      expiresIn: 3600, // 1 hora em segundos
+    });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao gerar token CSRF');
+    res.status(500).json({
+      error: 'Erro ao gerar token CSRF',
+      code: 'CSRF_TOKEN_GENERATION_FAILED',
+    });
+  }
 }
 
 /**
