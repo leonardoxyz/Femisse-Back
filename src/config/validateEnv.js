@@ -31,6 +31,7 @@ const envSchema = z.object({
   MERCADO_PAGO_ACCESS_TOKEN: z.string().optional(),
   MERCADO_PAGO_PUBLIC_KEY: z.string().optional(),
   MERCADO_PAGO_WEBHOOK_SECRET: z.string().optional(),
+  WEBHOOK_ALLOW_EXPIRED_TS: z.enum(['true', 'false']).optional(),
 
   // Melhor Envio OAuth2 / API
   MELHORENVIO_CLIENT_ID: z.string().optional(),

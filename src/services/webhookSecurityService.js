@@ -95,22 +95,38 @@ export function validateMercadoPagoSignature(payload, headers) {
     
     const timestamp = signatureParts.ts;
     const hash = signatureParts.v1;
-    
+
     if (!timestamp || !hash) {
       logSecurity('webhook_malformed_signature', { provider: 'mercadopago' });
       return { valid: false, error: 'Malformed signature' };
     }
-    
-    // Valida timestamp (não mais que 5 minutos de diferença)
-    const currentTime = Math.floor(Date.now() / 1000);
-    const timeDiff = Math.abs(currentTime - parseInt(timestamp));
-    
-    if (timeDiff > 300) { // 5 minutos
-      logSecurity('webhook_expired_timestamp', { 
+
+    const timestampNumber = Number.parseInt(timestamp, 10);
+    const allowExpiredTimestamp = env.WEBHOOK_ALLOW_EXPIRED_TS === 'true';
+
+    if (Number.isNaN(timestampNumber)) {
+      logSecurity('webhook_invalid_timestamp', { provider: 'mercadopago' });
+      return { valid: false, error: 'Invalid timestamp' };
+    }
+
+    const shouldEnforceTimestamp = !(allowExpiredTimestamp && payload?.live_mode === false);
+
+    if (shouldEnforceTimestamp) {
+      const currentTime = Math.floor(Date.now() / 1000);
+      const timeDiff = Math.abs(currentTime - timestampNumber);
+
+      if (timeDiff > 300) { // 5 minutos
+        logSecurity('webhook_expired_timestamp', {
+          provider: 'mercadopago',
+          timeDiff
+        });
+        return { valid: false, error: 'Timestamp expired' };
+      }
+    } else {
+      logger.warn({
         provider: 'mercadopago',
-        timeDiff 
-      });
-      return { valid: false, error: 'Timestamp expired' };
+        timestamp: timestampNumber,
+      }, 'Timestamp check skipped due to feature flag');
     }
     
     // Constrói string para HMAC
