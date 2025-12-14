@@ -23,10 +23,6 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32).optional(),
   JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
 
-  // Redis (opcional)
-  REDIS_URL: z.string().url().optional(),
-  REDIS_PASSWORD: z.string().optional(),
-
   // Mercado Pago
   MERCADO_PAGO_ACCESS_TOKEN: z.string().optional(),
   MERCADO_PAGO_PUBLIC_KEY: z.string().optional(),
@@ -176,8 +172,6 @@ export default {
   JWT_EXPIRES_IN: env.JWT_EXPIRES_IN,
   JWT_REFRESH_SECRET: env.JWT_REFRESH_SECRET,
   JWT_REFRESH_EXPIRES_IN: env.JWT_REFRESH_EXPIRES_IN,
-  REDIS_URL: env.REDIS_URL,
-  REDIS_PASSWORD: env.REDIS_PASSWORD,
   MERCADO_PAGO_ACCESS_TOKEN: env.MERCADO_PAGO_ACCESS_TOKEN,
   MERCADO_PAGO_PUBLIC_KEY: env.MERCADO_PAGO_PUBLIC_KEY,
   MERCADO_PAGO_WEBHOOK_SECRET: env.MERCADO_PAGO_WEBHOOK_SECRET,

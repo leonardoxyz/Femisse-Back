@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, vi } from '@jest/globals';
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { logger, logError, logSecurity, logPerformance } from '../logger.js';
 
 describe('Logger', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
   });
 
   describe('logger', () => {
